@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.venv/
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Streamlit
+.streamlit/secrets.toml
+# Keep config.toml
+!.streamlit/config.toml
+
+# Excel files (Optional - keep demo but maybe ignore uploaded ones if any)
+*.xlsx
+!demo.xlsx
+!测试表格数据.xlsx
+
+# Mac/Windows
+.DS_Store
+Thumbs.db
+
+# VS Code
+.vscode/
+
+# Trae
+.trae/
