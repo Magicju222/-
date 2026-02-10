@@ -1,10 +1,10 @@
 # AI Excel 数据清洗助手 (AI Excel Cleaner)
 
-这是一个基于 Streamlit 的智能 Excel 数据清洗工具，采用**纯本地模式**运行，无需 API Key。它结合了所见即所得的交互式操作和强大的清洗算法，帮助您快速处理复杂的 Excel 表格。
+这是一个基于 Streamlit 的智能 Excel 数据清洗工具，**集成了企业级用户认证系统**。它结合了所见即所得的交互式操作和强大的清洗算法，帮助您快速处理复杂的 Excel 表格。
 
 ## 功能特点
 
-- **纯本地运行**: 彻底移除外部 AI 依赖，数据安全可控，无需联网。
+- **企业级身份验证**: 集成 Supabase Auth，支持安全的用户注册与登录管理。
 - **交互式结构定义**: 点击表格行即可轻松定义表头和数据开始行，所见即所得。
 - **关键列智能填充**: 点击列标题即可标记“关键列”，系统自动执行**取消合并单元格**并**向下填充**，完美解决合并单元格导致的数据丢失问题。
 - **多 Sheet 批量清洗**: 支持一次性选择并配置多个工作表，一键批量清洗并导出。
@@ -27,7 +27,14 @@
    pip install -r requirements.txt
    ```
 
-2. 运行应用:
+2. 配置环境变量:
+   在 `.streamlit/secrets.toml` 或系统环境变量中配置 Supabase 凭证：
+   ```toml
+   SUPABASE_URL = "your-project-url"
+   SUPABASE_KEY = "your-anon-key"
+   ```
+
+3. 运行应用:
    ```bash
    streamlit run app.py
    ```
@@ -36,6 +43,7 @@
 
 - 本项目不再需要 Google Gemini API Key。
 - 推荐使用 Python 3.8+ 环境。
+- 部署详情请参考 [部署指南 (DEPLOY.md)](DEPLOY.md)。
 
 ## 用户手册
 

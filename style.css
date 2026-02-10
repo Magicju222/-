@@ -49,6 +49,14 @@
     --shadow-hover: 0 20px 40px -5px rgba(0, 0, 0, 0.08);
     --shadow-blue-glow: 0 12px 32px rgba(0, 122, 255, 0.15);
 
+    /* Colors - Google AI (Gemini) Palette */
+    --color-ai-blue: #4285F4;
+    --color-ai-purple: #9b72cb;
+    --color-ai-pink: #d96570;
+    --color-ai-orange: #f4af5e;
+    --gradient-ai: linear-gradient(135deg, var(--color-ai-blue), var(--color-ai-purple), var(--color-ai-pink), var(--color-ai-orange));
+    --gradient-ai-hover: linear-gradient(135deg, #5a95f5, #a67fcf, #df7680, #f5b972);
+    
     /* Fonts */
     --font-stack: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
     
@@ -58,6 +66,54 @@
     --radius-sm: 12px;
     --radius-pill: 980px;
     --header-height: 48px;
+}
+
+/* 0.1 Streamlit Internal Overrides - Performance & Smoothness */
+/* 彻底禁用 Streamlit 在运行时的“变淡”和“模糊”效果及默认容器边框 */
+
+[data-testid="stHorizontalBlock"],
+[data-testid="stVerticalBlock"],
+[data-testid="stColumn"],
+div[data-testid="stLayoutWrapper"] {
+    border: none !important;
+    outline: none !important;
+    box-shadow: none !important;
+}
+
+/* 1. 针对主容器的淡化 */
+[data-testid="stAppViewBlockContainer"] {
+    opacity: 1 !important;
+    filter: none !important;
+    transition: none !important;
+}
+
+/* 2. 针对所有 Emotion 缓存容器（Streamlit 内部样式）的强制覆盖 */
+div[class*="st-emotion-cache"] {
+    opacity: 1 !important;
+    filter: none !important;
+    transition: none !important;
+}
+
+/* 3. 针对正在运行状态的特定遮罩层（如果存在） */
+.stApp > div:first-child {
+    opacity: 1 !important;
+}
+
+/* 4. 保持状态小部件（如 Loading 圈）可见但背景不暗 */
+div[data-testid="stStatusWidget"] {
+    opacity: 1 !important;
+    filter: none !important;
+}
+
+/* 5. 移除全局动画禁用，改为针对性禁用 Streamlit 默认淡入淡出 */
+[data-testid="stAppViewBlockContainer"],
+div[class*="st-emotion-cache"] {
+    transition: none !important;
+}
+
+/* 特殊处理：保留必要的动画（如 Ballons 或特定 Hero 动画），否则全部禁用 */
+.hero-container, .hero-title, .hero-subtitle {
+    animation-duration: 0.8s !important;
 }
 
 /* 1. Global Reset & Typography */
@@ -84,27 +140,38 @@ html, body, [class*="css"] {
     background-size: cover;
 }
 
-/* Animations */
+/* --- 2. Animations --- */
 @keyframes fadeInUp {
     from {
         opacity: 0;
-        transform: translate3d(0, 20px, 0);
+        transform: translateY(20px);
     }
     to {
         opacity: 1;
-        transform: translate3d(0, 0, 0);
+        transform: translateY(0);
     }
 }
 
-@keyframes borderRotate {
-  from { transform: translate(-50%, -50%) rotate(0deg); }
-  to { transform: translate(-50%, -50%) rotate(360deg); }
+@keyframes pulse {
+    0% { transform: scale(1); opacity: 1; }
+    50% { transform: scale(1.05); opacity: 0.8; }
+    100% { transform: scale(1); opacity: 1; }
 }
 
-@keyframes laserPulse {
-  0% { filter: brightness(1) drop-shadow(0 0 5px rgba(0, 198, 255, 0.5)); }
-  50% { filter: brightness(1.3) drop-shadow(0 0 15px rgba(0, 114, 255, 0.8)); }
-  100% { filter: brightness(1) drop-shadow(0 0 5px rgba(0, 198, 255, 0.5)); }
+@keyframes shimmer {
+    0% { background-position: -200% 0; }
+    100% { background-position: 200% 0; }
+}
+
+@keyframes aiShimmer {
+    0% { background-position: 0% 50%; }
+    50% { background-position: 100% 50%; }
+    100% { background-position: 0% 50%; }
+}
+
+@keyframes aiFlow {
+    from { background-position: 0% center; }
+    to { background-position: 200% center; }
 }
 
 /* Hide Streamlit Default Elements */
@@ -207,7 +274,7 @@ header[data-testid="stHeader"] {
     background-color: var(--color-bg-card);
     backdrop-filter: blur(25px) saturate(180%);
     -webkit-backdrop-filter: blur(25px) saturate(180%);
-    border: 1px solid var(--color-border-light) !important;
+    border: none !important;
     border-radius: var(--radius-lg);
     padding: 40px;
     box-shadow: 
@@ -231,116 +298,144 @@ header[data-testid="stHeader"] {
     box-shadow: 
         var(--shadow-hover), 
         var(--shadow-md);
-    border-color: var(--color-border-hover) !important;
+    border: none !important;
 }
 
 /* 5. Button Styling */
 
-/* Primary Button (Start Cleaning, Download) */
-.stButton > button[kind="primary"], 
+/* Google AI Rotating Border Animation */
+@keyframes rotateBorder {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+/* Base Button Reset & Layout */
+.stButton > button, 
 .stDownloadButton > button {
-    background-color: var(--color-accent-blue) !important;
-    color: white !important;
+    border: none !important;
+    position: relative !important;
+    z-index: 1 !important;
+    overflow: hidden !important;
+    background: transparent !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275) !important;
+    min-height: 45px !important;
+}
+
+/* The Animated Gradient Border Layer (True Rotating Surround) */
+.stButton > button::before,
+.stDownloadButton > button::before {
+    content: "" !important;
+    position: absolute !important;
+    /* Use a larger square to ensure coverage during rotation */
+    top: -50% !important;
+    left: -50% !important;
+    width: 200% !important;
+    height: 200% !important;
+    background: conic-gradient(
+        from 0deg,
+        transparent 0deg,
+        #4285F4 90deg,
+        #9b72cb 180deg,
+        #d96570 270deg,
+        #f4af5e 360deg
+    ) !important;
+    z-index: -1 !important;
+    display: block !important;
+    opacity: 0 !important;
+    transition: opacity 0.3s ease !important;
+    /* Ensure rotation is centered */
+    transform-origin: center center !important;
+}
+
+/* Hover Trigger for Animation */
+.stButton > button:hover::before,
+.stDownloadButton > button:hover::before {
+    opacity: 1 !important;
+    animation: rotateBorder 3s linear infinite !important;
+}
+
+/* The Inner Cover to Create the "Border" Effect */
+.stButton > button::after,
+.stDownloadButton > button::after {
+    content: "" !important;
+    position: absolute !important;
+    top: 2px !important; /* Border thickness */
+    left: 2px !important;
+    right: 2px !important;
+    bottom: 2px !important;
+    border-radius: inherit !important;
+    z-index: -1 !important;
+    display: block !important;
+    backdrop-filter: blur(15px) saturate(180%) !important;
+    -webkit-backdrop-filter: blur(15px) saturate(180%) !important;
+    transition: all 0.3s cubic-bezier(0.25, 0.1, 0.25, 1) !important;
+}
+
+/* Primary Button (Start Cleaning) */
+.stButton > button[kind="primary"] {
     border-radius: var(--radius-pill) !important;
     padding: 12px 32px !important;
-    font-size: 17px !important;
-    font-weight: 500 !important;
-    border: none !important;
-    box-shadow: 0 4px 6px rgba(0, 122, 255, 0.2) !important;
-    transition: all 0.2s cubic-bezier(0.25, 0.1, 0.25, 1) !important;
+    color: white !important;
 }
 
-.stButton > button[kind="primary"]:hover, 
-.stDownloadButton > button:hover {
-    background-color: var(--color-accent-blue-hover) !important;
-    transform: translateY(-1px) !important;
-    box-shadow: 0 6px 12px rgba(0, 122, 255, 0.3) !important;
+.stButton > button[kind="primary"]::after {
+    background: rgba(29, 29, 31, 0.8) !important; /* Keep dark for primary but same blur */
 }
 
-.stButton > button[kind="primary"]:active, 
-.stDownloadButton > button:active {
-    transform: scale(0.96) translateY(0) !important;
-    background-color: var(--color-accent-blue-active) !important;
+.stButton > button[kind="primary"]:hover {
+    transform: scale(1.02) !important;
+    box-shadow: 0 8px 32px rgba(0, 122, 255, 0.15) !important;
 }
 
-/* Secondary Button (User Guide) - Glassmorphism & Laser Style */
+.stButton > button[kind="primary"]:hover::after {
+    background: rgba(29, 29, 31, 0.9) !important;
+}
+
+/* Secondary Button (User Guide) */
 .stButton > button[kind="secondary"] {
-    /* Glass Base */
-    background: rgba(255, 255, 255, 0.01) !important;
-    border: 1px solid rgba(255, 255, 255, 0.4) !important;
-    color: var(--color-text-primary) !important;
     border-radius: var(--radius-pill) !important;
-    padding: 10px 24px !important;
-    font-size: 15px !important;
-    font-weight: 500 !important;
-    position: relative;
-    overflow: hidden; /* For Laser clipping */
-    z-index: 1;
-    transition: all 0.3s ease !important;
-    backdrop-filter: blur(16px);
-    -webkit-backdrop-filter: blur(16px);
-    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.02) !important;
+    padding: 12px 32px !important;
+    color: var(--color-text-primary) !important;
+    border: 1px solid rgba(0, 122, 255, 0.2) !important;
 }
 
-/* Laser Effect - ::before */
-.stButton > button[kind="secondary"]::before {
-    content: "";
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    width: 300%; /* Larger relative to small button */
-    height: 600%; /* Much larger height to ensure coverage */
-    background: conic-gradient(
-        from 0deg, 
-        transparent 0%, 
-        transparent 70%, 
-        #00c6ff 85%, 
-        #0072ff 100%
-    );
-    animation: borderRotate 3s linear infinite;
-    z-index: -2;
-    opacity: 0;
-    transition: opacity 0.3s ease;
-    transform: translate(-50%, -50%);
-    pointer-events: none;
-}
-
-/* Glass Inner Layer - ::after */
 .stButton > button[kind="secondary"]::after {
-    content: "";
-    position: absolute;
-    top: 1px; 
-    left: 1px; 
-    right: 1px; 
-    bottom: 1px;
-    border-radius: var(--radius-pill);
-    background: rgba(255, 255, 255, 0.65);
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
-    z-index: -1;
-    transition: background 0.3s ease;
+    background: rgba(255, 255, 255, 0.1) !important;
 }
 
-/* Hover States */
 .stButton > button[kind="secondary"]:hover {
-    transform: translateY(-2px) !important;
-    border-color: rgba(255, 255, 255, 0.6) !important;
-    box-shadow: 
-        0 8px 16px -4px rgba(0, 0, 0, 0.05),
-        0 0 12px rgba(0, 198, 255, 0.15) !important;
-    color: #007AFF !important;
-}
-
-.stButton > button[kind="secondary"]:hover::before {
-    opacity: 1;
+    border-color: rgba(0, 122, 255, 0.5) !important;
+    transform: scale(1.02) !important;
+    box-shadow: 0 8px 32px rgba(0, 122, 255, 0.15) !important;
 }
 
 .stButton > button[kind="secondary"]:hover::after {
-    background: rgba(255, 255, 255, 0.75);
+    background: rgba(255, 255, 255, 0.15) !important;
 }
 
-.stButton > button[kind="secondary"]:active {
+/* Download Button */
+.stDownloadButton > button {
+    border-radius: var(--radius-pill) !important;
+    padding: 12px 32px !important;
+    color: white !important;
+}
+
+.stDownloadButton > button::after {
+    background: rgba(29, 29, 31, 0.8) !important;
+}
+
+.stDownloadButton > button:hover::after {
+    background: rgba(29, 29, 31, 0.9) !important;
+}
+
+/* Universal Active State */
+.stButton > button:active,
+.stDownloadButton > button:active {
     transform: scale(0.96) !important;
+    transition: transform 0.1s !important;
 }
 
 
@@ -366,7 +461,7 @@ header[data-testid="stHeader"] {
     display: none !important;
 }
 
-/* Custom Upload Area - The "Glass Card" */
+/* Custom Upload Area - The "Clean Card" */
 [data-testid='stFileUploader'] section {
     display: flex;
     flex-direction: column;
@@ -376,85 +471,36 @@ header[data-testid="stHeader"] {
     position: relative;
     overflow: hidden;
     border-radius: var(--radius-md);
-    
-    /* Transparent Base for Glass Effect */
-    background: rgba(255, 255, 255, 0.01); 
-    border: 1px solid rgba(255, 255, 255, 0.4); /* Crisp glass border */
-    
-    /* Transitions */
-    transition: all 0.4s cubic-bezier(0.25, 0.8, 0.25, 1);
+    background: rgba(255, 255, 255, 0.1) !important;
+    border: 1px solid rgba(0, 122, 255, 0.2) !important;
+    backdrop-filter: blur(15px) saturate(180%) !important;
+    -webkit-backdrop-filter: blur(15px) saturate(180%) !important;
+    transition: all 0.3s cubic-bezier(0.25, 0.1, 0.25, 1);
     cursor: pointer;
     min-height: 320px;
-    z-index: 0;
+    z-index: 1;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.05);
 }
 
-/* 1. Laser Beam (Rotating Gradient) - ::before */
-[data-testid='stFileUploader'] section::before {
-    content: "";
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    width: 200%;
-    height: 200%;
-    background: conic-gradient(
-        from 0deg, 
-        transparent 0%, 
-        transparent 70%, 
-        #00c6ff 85%, 
-        #0072ff 100%
-    );
-    animation: borderRotate 4s linear infinite, laserPulse 3s ease-in-out infinite;
-    z-index: -2;
-    opacity: 0;
-    transition: opacity 0.3s ease;
-    will-change: transform, filter;
-}
-
-/* 2. Frosted Glass Background (The "Inner" Layer) - ::after */
+/* Hard Disable Laser Pseudo-elements */
+[data-testid='stFileUploader'] section::before,
 [data-testid='stFileUploader'] section::after {
-    content: "";
-    position: absolute;
-    top: 2px; 
-    left: 2px; 
-    right: 2px; 
-    bottom: 2px;
-    border-radius: calc(var(--radius-md) - 2px);
-    
-    /* Deep Glass Effect */
-    background: rgba(255, 255, 255, 0.15); /* Low opacity for transparency */
-    backdrop-filter: blur(24px) saturate(180%);
-    -webkit-backdrop-filter: blur(24px) saturate(180%);
-    box-shadow: inset 0 0 40px rgba(255, 255, 255, 0.1);
-    
-    z-index: -1;
-    transition: all 0.3s ease;
+    display: none !important;
+    content: none !important;
+    animation: none !important;
+    background: none !important;
 }
 
 /* Hover States */
 [data-testid='stFileUploader'] section:hover {
-    transform: translateY(-4px) scale(1.005);
-    border-color: rgba(255, 255, 255, 0.6);
-    box-shadow: 
-        0 20px 40px -10px rgba(0, 0, 0, 0.1),
-        0 0 20px rgba(0, 198, 255, 0.15); /* Subtle blue glow */
-}
-
-[data-testid='stFileUploader'] section:hover::before {
-    opacity: 1; /* Show Laser */
-}
-
-[data-testid='stFileUploader'] section:hover::after {
-    background: rgba(255, 255, 255, 0.25); /* Slightly more opaque on hover */
-    backdrop-filter: blur(30px) saturate(200%);
-    -webkit-backdrop-filter: blur(30px) saturate(200%);
+    transform: translateY(-2px);
+    border-color: rgba(0, 122, 255, 0.5) !important;
+    background: rgba(255, 255, 255, 0.15) !important;
+    box-shadow: 0 12px 40px rgba(0, 122, 255, 0.15);
 }
 
 /* Accessibility */
 @media (prefers-reduced-motion: reduce) {
-    [data-testid='stFileUploader'] section::before {
-        animation: none;
-        background: linear-gradient(135deg, #00c6ff, #0072ff);
-    }
     [data-testid='stFileUploader'] section:hover {
         transform: none;
     }
@@ -567,16 +613,6 @@ header[data-testid="stHeader"] {
     border: 1px solid var(--color-border-dataframe);
     border-radius: var(--radius-sm);
     overflow: hidden;
-}
-
-/* 8. Download Button */
-.stDownloadButton > button {
-    background-color: var(--color-accent-green) !important;
-    box-shadow: 0 4px 6px rgba(52, 199, 89, 0.2) !important;
-}
-.stDownloadButton > button:hover {
-    background-color: var(--color-accent-green-hover) !important;
-    box-shadow: 0 6px 12px rgba(52, 199, 89, 0.3) !important;
 }
 
 /* 9. Instructions */

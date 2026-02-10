@@ -92,9 +92,14 @@ class ExcelCleaner:
                     sheet.cell(row=row, column=col).value = top_left_value
 
         # Convert to DataFrame
-        # Actually, let's just read everything as a list of lists then to DataFrame
-        all_data = list(sheet.values)
-        df = pd.DataFrame(all_data)
+        # Use generator to save memory, then close workbook immediately
+        df = pd.DataFrame(sheet.values)
+        wb.close()
+        
+        # Explicit garbage collection for large objects
+        import gc
+        gc.collect()
+        
         return df
 
     def process_headers(self, df, header_rows, separator="_", max_length=100, keep_case=True):
