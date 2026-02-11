@@ -8,8 +8,9 @@ import services
 # Uses st.secrets in production, or environment variables locally
 @st.cache_resource
 def init_supabase() -> Optional[Client]:
+    """Initialize Supabase client with anon key for frontend use."""
     url = os.environ.get("SUPABASE_URL")
-    key = os.environ.get("SUPABASE_KEY")
+    key = os.environ.get("SUPABASE_ANON_KEY")
     
     # Try loading from streamlit secrets if env vars are missing
     if not url or not key:
@@ -17,7 +18,7 @@ def init_supabase() -> Optional[Client]:
             if not url:
                 url = st.secrets["SUPABASE_URL"]
             if not key:
-                key = st.secrets["SUPABASE_KEY"]
+                key = st.secrets["SUPABASE_ANON_KEY"]
         except Exception:
             # Secrets not found or keys missing
             pass

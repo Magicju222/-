@@ -10,6 +10,11 @@ venv/
 pip-log.txt
 pip-delete-this-directory.txt
 
+# Environment variables
+.env
+.env.*
+!.env.example
+
 # Streamlit
 .streamlit/secrets.toml
 # Keep config.toml

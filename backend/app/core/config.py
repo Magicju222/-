@@ -5,9 +5,9 @@ class Settings(BaseSettings):
     API_V1_STR: str = "/api/v1"
     PROJECT_NAME: str = "AI Excel Cleaner Admin API"
     
-    # Supabase
+    # Supabase - Backend uses service role key for admin operations
     SUPABASE_URL: str
-    SUPABASE_KEY: str
+    SUPABASE_SERVICE_KEY: str
     
     class Config:
         env_file = ".env"
