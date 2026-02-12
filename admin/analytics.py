@@ -25,14 +25,16 @@ def show_analytics():
         date_from = st.date_input(
             "开始日期",
             value=datetime.now() - timedelta(days=30),
-            max_value=datetime.now()
+            max_value=datetime.now(),
+            key="analytics_date_from"
         )
 
     with col2:
         date_to = st.date_input(
             "结束日期",
             value=datetime.now(),
-            max_value=datetime.now()
+            max_value=datetime.now(),
+            key="analytics_date_to"
         )
 
     with col3:

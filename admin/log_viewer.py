@@ -44,14 +44,16 @@ def show_log_viewer():
         date_from = st.date_input(
             "开始日期",
             value=datetime.now() - timedelta(days=7),
-            max_value=datetime.now()
+            max_value=datetime.now(),
+            key="logs_date_from"
         )
 
     with col2:
         date_to = st.date_input(
             "结束日期",
             value=datetime.now(),
-            max_value=datetime.now()
+            max_value=datetime.now(),
+            key="logs_date_to"
         )
 
     with col3:
@@ -221,7 +223,7 @@ def show_logs_table(df_logs: pd.DataFrame, df_users: pd.DataFrame):
             display_df['created_at'] = pd.to_datetime(display_df['created_at']).dt.strftime('%Y-%m-%d %H:%M')
 
         # Add user email
-        if 'user_id' in display_df.columns and not df_users.empty:
+        if 'user_id' in display_df.columns and not df_users.empty and 'email' in df_users.columns:
             user_dict = dict(zip(df_users['id'], df_users['email']))
             display_df['user_email'] = display_df['user_id'].map(user_dict)
 
