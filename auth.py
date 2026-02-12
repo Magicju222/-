@@ -3,6 +3,10 @@ from supabase import create_client, Client
 import os
 from typing import Optional
 import services
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 # Initialize Supabase client
 # Uses st.secrets in production, or environment variables locally
@@ -92,6 +96,10 @@ def show_login_page():
                                     st.session_state.user = response.user
                                     st.session_state.user_profile = profile
                                     
+                                    # Store access token for API calls
+                                    if hasattr(response, 'session') and response.session:
+                                        st.session_state.access_token = response.session.access_token
+                                    
                                     st.success("登录成功！正在跳转...")
                                     st.rerun()
                             except Exception as e:
@@ -109,6 +117,19 @@ def show_login_page():
                     if register_button:
                         try:
                             response = supabase.auth.sign_up({"email": new_email, "password": new_password})
+                            
+                            # Create user profile after successful signup
+                            if response.user:
+                                try:
+                                    supabase.table("user_profiles").insert({
+                                        "id": response.user.id,
+                                        "role": "user",
+                                        "status": "active",
+                                        "nickname": new_email.split('@')[0]
+                                    }).execute()
+                                except Exception as profile_error:
+                                    print(f"Profile creation error: {profile_error}")
+                            
                             st.success("注册成功！请检查您的邮箱进行验证。")
                         except Exception as e:
                             st.error(f"注册失败: {str(e)}")

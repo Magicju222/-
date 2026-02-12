@@ -1,6 +1,6 @@
 from typing import Any, List
 from fastapi import APIRouter, Depends
-from backend.app.api import deps
+from app.api import deps
 from supabase import Client
 
 router = APIRouter()

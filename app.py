@@ -6,6 +6,7 @@ import ui
 import auth
 import services
 import time
+from admin import show_admin_panel, check_admin_access
 
 # Page Config (Must be first)
 st.set_page_config(
@@ -28,6 +29,9 @@ if 'last_uploaded_file_id' not in st.session_state:
 # Track if user guide has been clicked
 if 'guide_clicked' not in st.session_state:
     st.session_state.guide_clicked = False
+# Track admin panel visibility
+if 'show_admin_panel' not in st.session_state:
+    st.session_state.show_admin_panel = False
 
 # Load CSS
 ui.load_css()
@@ -59,14 +63,40 @@ config_service = services.ConfigService(supabase) if supabase else None
 log_service = services.LogService(supabase) if supabase else None
 
 # Load System Config with caching to improve performance
-@st.cache_data(ttl=600)  # Cache for 10 minutes
+@st.cache_data(ttl=60)  # Cache for 1 minute (reduced for faster sync)
 def get_cached_config(_service):
     if _service:
         return _service.get_system_config()
     return {}
 
+# Initialize system config in session state
 if 'system_config' not in st.session_state:
     st.session_state.system_config = get_cached_config(config_service)
+
+# Track config version for detecting updates from other sessions
+if 'config_version' not in st.session_state:
+    st.session_state.config_version = 0
+
+# Check if config was updated from admin panel (via config_last_updated timestamp)
+config_updated = False
+if 'config_last_updated' in st.session_state:
+    last_update = st.session_state.config_last_updated
+    if 'last_seen_config_update' not in st.session_state:
+        st.session_state.last_seen_config_update = last_update
+        config_updated = True
+    elif st.session_state.last_seen_config_update != last_update:
+        st.session_state.last_seen_config_update = last_update
+        config_updated = True
+
+# Refresh config if needed (either not loaded or was updated)
+if config_updated or not st.session_state.system_config:
+    with st.spinner("🔄 正在同步最新配置..."):
+        fresh_config = get_cached_config(config_service)
+        if fresh_config:
+            st.session_state.system_config = fresh_config
+            st.session_state.config_version += 1
+        else:
+            st.error("❌ 配置同步失败，请刷新页面重试")
 
 system_config = st.session_state.system_config
 
@@ -107,11 +137,68 @@ if system_config.get("MAINTENANCE_MODE") == "true":
 
 # Get User Profile
 user_profile = st.session_state.get('user_profile') or {}
+
+# If user is logged in but profile is empty or has no role, reload it from database
+if st.session_state.get('user') and (not user_profile or not user_profile.get('role')):
+    supabase = auth.init_supabase()
+    if supabase:
+        user_service = services.UserService(supabase)
+        profile = user_service.get_profile(st.session_state.user.id)
+        if profile:
+            st.session_state.user_profile = profile
+            user_profile = profile
+
 is_admin = user_profile.get('role') in ('admin', 'super_admin')
+
+# Show System Notice if configured
+system_notice = system_config.get("SYSTEM_NOTICE", "").strip()
+if system_notice:
+    # Track dismissed notices
+    if 'dismissed_notices' not in st.session_state:
+        st.session_state.dismissed_notices = set()
+
+    # Create a hash of the notice to track if it's been dismissed
+    import hashlib
+    notice_hash = hashlib.md5(system_notice.encode()).hexdigest()[:8]
+
+    if notice_hash not in st.session_state.dismissed_notices:
+        with st.container():
+            col1, col2 = st.columns([10, 1])
+            with col1:
+                st.info(f"📢 系统公告: {system_notice}", icon="ℹ️")
+            with col2:
+                if st.button("✕", key=f"dismiss_notice_{notice_hash}"):
+                    st.session_state.dismissed_notices.add(notice_hash)
+                    st.rerun()
+
+# Show Admin Panel if requested
+if st.session_state.get('show_admin_panel', False):
+    if check_admin_access():
+        # Add back button
+        if st.button("← 返回主页面"):
+            st.session_state.show_admin_panel = False
+            st.rerun()
+        
+        # Show admin panel
+        show_admin_panel()
+        
+        # Stop here to not show main content
+        st.stop()
+    else:
+        st.error("⛔ 访问被拒绝：需要管理员权限")
+        st.session_state.show_admin_panel = False
 
 # Render Layout
 # We render sidebar first
 api_key, settings = ui.render_sidebar()
+
+# Admin Panel Button (only for admins)
+if is_admin:
+    with st.sidebar:
+        st.divider()
+        if st.button("🔧 管理面板", use_container_width=True):
+            st.session_state.show_admin_panel = True
+            st.rerun()
 
 # Logout Button in Sidebar
 with st.sidebar:

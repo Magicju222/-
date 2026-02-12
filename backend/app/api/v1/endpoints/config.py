@@ -1,6 +1,6 @@
 from typing import Any, Dict
 from fastapi import APIRouter, Depends, Body
-from backend.app.api import deps
+from app.api import deps
 from supabase import Client
 from pydantic import BaseModel
 
@@ -28,9 +28,11 @@ def update_config(
     current_user: Any = Depends(deps.get_current_admin),
 ):
     """
-    Update a specific config key.
+    Update a specific config key and return all updated config.
     """
-    # Check if key exists? Upsert?
-    # RLS allows update for admins.
-    response = db.table("system_config").update({"value": config.value}).eq("key", config.key).execute()
+    # Update the specific config key
+    db.table("system_config").update({"value": config.value}).eq("key", config.key).execute()
+
+    # Return all config to ensure frontend has latest data
+    response = db.table("system_config").select("*").execute()
     return response.data

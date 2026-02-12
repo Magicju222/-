@@ -2,7 +2,7 @@ from typing import Generator, Optional
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from supabase import Client
-from backend.app.services.supabase import get_supabase
+from app.services.supabase import get_supabase
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
@@ -23,7 +23,7 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Client = Depends(g
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=f"Could not validate credentials: {str(e)}",
+            detail="Invalid authentication credentials",
             headers={"WWW-Authenticate": "Bearer"},
         )
 

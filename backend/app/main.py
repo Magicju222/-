@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from backend.app.core.config import get_settings
-from backend.app.api.v1.api import api_router
+from app.core.config import get_settings
+from app.api.v1.api import api_router
 
 settings = get_settings()
 
@@ -24,3 +24,7 @@ app.include_router(api_router, prefix=settings.API_V1_STR)
 @app.get("/")
 def root():
     return {"message": "Welcome to AI Excel Cleaner Admin API"}
+
+@app.get("/api/v1/health")
+def health_check():
+    return {"status": "healthy"}
