@@ -33,18 +33,36 @@ def load_css():
     try:
         with open("style.css", "r", encoding="utf-8") as f:
             css = f.read()
-            
+        
         # Get localized instructions
         title = t("uploader_title")
         subtitle = t("uploader_subtitle")
         details = t("uploader_details")
         
+        # Check if in admin panel mode
+        is_admin_panel = st.session_state.get('show_admin_panel', False)
+        
         # Inject CSS with dynamic content
         import time
         version = int(time.time())
+        
+        # Admin panel specific CSS to hide file uploader
+        admin_css = ""
+        if is_admin_panel:
+            admin_css = """
+            /* Hide file uploader in admin panel */
+            [data-testid='stFileUploader'] {
+                display: none !important;
+            }
+            [data-testid="stVerticalBlockBorderWrapper"]:has([data-testid="stFileUploader"]) {
+                display: none !important;
+            }
+            """
+        
         st.markdown(f"""
         <style id="custom-css-{version}">
             {css}
+            {admin_css}
             
             /* Dynamic Content Injection for I18n */
             /* Title on the inner text wrapper's BEFORE */

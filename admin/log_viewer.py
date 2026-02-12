@@ -5,9 +5,50 @@ Handles cleaning logs display and filtering
 
 import streamlit as st
 import pandas as pd
+import json
+import numpy as np
 from datetime import datetime, timedelta
 from typing import List, Dict
 from .admin_api import get_admin_api
+
+LOGS_CACHE_TTL = 30  # seconds
+
+
+@st.cache_data(ttl=LOGS_CACHE_TTL, show_spinner=False)
+def get_cached_logs(api_url: str, limit: int = 5000) -> List[Dict]:
+    """Cached logs fetch to avoid repeated API calls"""
+    from .admin_api import AdminAPI
+    api = AdminAPI(api_url)
+    return api.get_logs(limit=limit)
+
+
+@st.cache_data(ttl=LOGS_CACHE_TTL, show_spinner=False)
+def get_cached_users_for_logs(api_url: str, limit: int = 1000) -> List[Dict]:
+    """Cached users fetch for log viewer"""
+    from .admin_api import AdminAPI
+    api = AdminAPI(api_url)
+    return api.get_users(limit=limit)
+
+
+def convert_to_json_serializable(obj):
+    """Convert pandas Series/dict to JSON serializable format"""
+    if obj is None:
+        return {}
+    if hasattr(obj, 'to_dict'):
+        obj = obj.to_dict()
+    
+    def default_handler(o):
+        if isinstance(o, (datetime, pd.Timestamp)):
+            return o.isoformat()
+        if isinstance(o, np.integer):
+            return int(o)
+        if isinstance(o, np.floating):
+            return float(o)
+        if pd.isna(o):
+            return None
+        return str(o)
+    
+    return json.loads(json.dumps(obj, default=default_handler))
 
 
 def show_log_viewer():
@@ -17,10 +58,9 @@ def show_log_viewer():
     # Get admin API client
     api = get_admin_api()
 
-    # Load data
-    with st.spinner("加载数据..."):
-        logs = api.get_logs(limit=5000)
-        users = api.get_users(limit=1000)
+    # Load data with caching
+    logs = get_cached_logs(api.base_url, limit=5000)
+    users = get_cached_users_for_logs(api.base_url, limit=1000)
 
     if not logs:
         st.info("暂无日志数据")
@@ -345,7 +385,7 @@ def show_log_details(log: Dict, df_users: pd.DataFrame):
 
         # Raw data
         with st.expander("查看原始数据"):
-            st.json(log)
+            st.json(convert_to_json_serializable(log))
 
 
 def format_file_size(size_bytes: int) -> str:

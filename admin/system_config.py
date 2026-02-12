@@ -9,6 +9,17 @@ from typing import Dict, List, Optional
 from datetime import datetime
 from .admin_api import get_admin_api
 
+CONFIG_CACHE_KEY = "admin_config_cache"
+CONFIG_CACHE_TTL = 30  # seconds
+
+
+@st.cache_data(ttl=CONFIG_CACHE_TTL, show_spinner=False)
+def get_cached_config(api_url: str) -> List[Dict]:
+    """Cached config fetch to avoid repeated API calls"""
+    from .admin_api import AdminAPI
+    api = AdminAPI(api_url)
+    return api.get_config()
+
 # Configuration definitions with metadata
 CONFIG_DEFINITIONS = {
     'MAINTENANCE_MODE': {
@@ -149,15 +160,15 @@ def show_system_config():
         with st.expander("ℹ️ 同步状态", expanded=False):
             st.info(f"上次同步时间: {st.session_state.config_last_updated}")
             if st.button("🔄 立即刷新配置"):
+                st.cache_data.clear()
                 st.rerun()
 
     # Get admin API client
     api = get_admin_api()
 
-    # Load current configuration with error handling
+    # Load current configuration with caching
     try:
-        with st.spinner("加载配置..."):
-            config = api.get_config()
+        config = get_cached_config(api.base_url)
 
         if not config:
             st.info("暂无配置数据")

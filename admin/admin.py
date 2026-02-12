@@ -12,22 +12,31 @@ from .system_config import show_system_config
 def show_admin_panel():
     """Display the main admin panel with tabs"""
     
-    # Admin panel header
-    st.markdown("""
-        <style>
-        .admin-header {
-            background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
-            padding: 1.5rem;
-            border-radius: 10px;
-            color: white;
-            margin-bottom: 2rem;
-        }
-        </style>
-        <div class="admin-header">
-            <h1 style="margin:0;">🔧 管理面板</h1>
-            <p style="margin:0; opacity:0.9;">系统管理和数据分析中心</p>
-        </div>
-    """, unsafe_allow_html=True)
+    # Admin panel header with refresh button
+    col_header, col_refresh = st.columns([5, 1])
+    
+    with col_header:
+        st.markdown("""
+            <style>
+            .admin-header {
+                background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+                padding: 1.5rem;
+                border-radius: 10px;
+                color: white;
+                margin-bottom: 1rem;
+            }
+            </style>
+            <div class="admin-header">
+                <h1 style="margin:0;">🔧 管理面板</h1>
+                <p style="margin:0; opacity:0.9;">系统管理和数据分析中心</p>
+            </div>
+        """, unsafe_allow_html=True)
+    
+    with col_refresh:
+        st.markdown("<br>", unsafe_allow_html=True)
+        if st.button("🔄 刷新数据", use_container_width=True):
+            st.cache_data.clear()
+            st.rerun()
     
     # Create tabs for different sections
     tabs = st.tabs([

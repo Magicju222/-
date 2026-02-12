@@ -5,9 +5,42 @@ Handles user listing, search, ban/unban operations
 
 import streamlit as st
 import pandas as pd
+import json
+import numpy as np
 from datetime import datetime, timedelta
 from typing import List, Dict
 from .admin_api import get_admin_api
+
+USERS_CACHE_TTL = 30  # seconds
+
+
+@st.cache_data(ttl=USERS_CACHE_TTL, show_spinner=False)
+def get_cached_users(api_url: str, limit: int = 1000) -> List[Dict]:
+    """Cached users fetch to avoid repeated API calls"""
+    from .admin_api import AdminAPI
+    api = AdminAPI(api_url)
+    return api.get_users(limit=limit)
+
+
+def convert_to_json_serializable(obj):
+    """Convert object to JSON serializable format"""
+    if obj is None:
+        return {}
+    if hasattr(obj, 'to_dict'):
+        obj = obj.to_dict()
+    
+    def default_handler(o):
+        if isinstance(o, (datetime, pd.Timestamp)):
+            return o.isoformat()
+        if isinstance(o, np.integer):
+            return int(o)
+        if isinstance(o, np.floating):
+            return float(o)
+        if pd.isna(o):
+            return None
+        return str(o)
+    
+    return json.loads(json.dumps(obj, default=default_handler))
 
 def show_user_management():
     """Display user management interface"""
@@ -16,9 +49,8 @@ def show_user_management():
     # Get admin API client
     api = get_admin_api()
     
-    # Load users
-    with st.spinner("加载用户数据..."):
-        users = api.get_users(limit=1000)
+    # Load users with caching
+    users = get_cached_users(api.base_url, limit=1000)
     
     if not users:
         st.info("暂无用户数据")
@@ -277,7 +309,10 @@ def show_user_details(api, user_id: str):
             
             if 'metadata' in user and user['metadata']:
                 st.markdown("**元数据**")
-                st.json(user['metadata'])
+                try:
+                    st.json(convert_to_json_serializable(user['metadata']))
+                except Exception:
+                    st.write(user['metadata'])
     else:
         st.error("无法获取用户详情")
 

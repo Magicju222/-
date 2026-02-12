@@ -9,6 +9,32 @@ from datetime import datetime, timedelta
 from typing import Dict, List, Tuple
 from .admin_api import get_admin_api
 
+ANALYTICS_CACHE_TTL = 30  # seconds
+
+
+@st.cache_data(ttl=ANALYTICS_CACHE_TTL, show_spinner=False)
+def get_cached_stats(api_url: str) -> Dict:
+    """Cached stats fetch"""
+    from .admin_api import AdminAPI
+    api = AdminAPI(api_url)
+    return api.get_stats()
+
+
+@st.cache_data(ttl=ANALYTICS_CACHE_TTL, show_spinner=False)
+def get_cached_users_analytics(api_url: str, limit: int = 10000) -> List[Dict]:
+    """Cached users fetch for analytics"""
+    from .admin_api import AdminAPI
+    api = AdminAPI(api_url)
+    return api.get_users(limit=limit)
+
+
+@st.cache_data(ttl=ANALYTICS_CACHE_TTL, show_spinner=False)
+def get_cached_logs_analytics(api_url: str, limit: int = 10000) -> List[Dict]:
+    """Cached logs fetch for analytics"""
+    from .admin_api import AdminAPI
+    api = AdminAPI(api_url)
+    return api.get_logs(limit=limit)
+
 
 def show_analytics():
     """Display analytics dashboard"""
@@ -47,11 +73,10 @@ def show_analytics():
         if quick_range != "自定义":
             date_from, date_to = get_quick_date_range(quick_range)
 
-    # Load data
-    with st.spinner("加载数据..."):
-        stats = api.get_stats()
-        users = api.get_users(limit=10000)
-        logs = api.get_logs(limit=10000)
+    # Load data with caching
+    stats = get_cached_stats(api.base_url)
+    users = get_cached_users_analytics(api.base_url, limit=10000)
+    logs = get_cached_logs_analytics(api.base_url, limit=10000)
 
     # Filter data by date range
     df_users, df_logs = filter_data_by_date(users, logs, date_from, date_to)

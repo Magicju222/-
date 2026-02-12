@@ -188,8 +188,7 @@ if st.session_state.get('show_admin_panel', False):
         st.error("⛔ 访问被拒绝：需要管理员权限")
         st.session_state.show_admin_panel = False
 
-# Render Layout
-# We render sidebar first
+# Render Layout - Only if not in admin panel
 api_key, settings = ui.render_sidebar()
 
 # Admin Panel Button (only for admins)
@@ -206,188 +205,191 @@ with st.sidebar:
     if st.button("🚪 Logout"):
         auth.logout()
 
-ui.render_navbar()
-ui.render_hero()
+# Only show navbar and hero if not in admin panel
+if not st.session_state.get('show_admin_panel', False):
+    ui.render_navbar()
+    ui.render_hero()
 
-# Main Controller Logic
-main_col1, main_col2, main_col3 = st.columns([1, 3, 1])
+# Main Controller Logic - Only show if not in admin panel
+if not st.session_state.get('show_admin_panel', False):
+    main_col1, main_col2, main_col3 = st.columns([1, 3, 1])
 
-with main_col2:
-    # File Uploader Card
-    with st.container(border=True):
-        uploaded_file = st.file_uploader(
-            "Upload Excel/CSV file", 
-            type=['xlsx', 'xls', 'csv'], 
-            label_visibility="collapsed",
-            key="uploaded_file",
-            on_change=handle_file_upload
-        )
+    with main_col2:
+        # File Uploader Card
+        with st.container(border=True):
+            uploaded_file = st.file_uploader(
+                "Upload Excel/CSV file", 
+                type=['xlsx', 'xls', 'csv'], 
+                label_visibility="collapsed",
+                key="uploaded_file",
+                on_change=handle_file_upload
+            )
 
-    if uploaded_file:
-        # Check File Size Limit
-        max_size_mb = int(system_config.get("MAX_FILE_SIZE_MB", 50))
-        if uploaded_file.size > max_size_mb * 1024 * 1024:
-            st.error(f"文件大小超过限制 ({max_size_mb}MB)。")
-        else:
-            try:
-                cleaner = ExcelCleaner()
-            
-                # 1. Get Sheet Names
-                # Read file as bytes once for caching
-                file_bytes = uploaded_file.getvalue()
-                sheet_names = cached_get_sheet_names(file_bytes, uploaded_file.name)
+        if uploaded_file:
+            # Check File Size Limit
+            max_size_mb = int(system_config.get("MAX_FILE_SIZE_MB", 50))
+            if uploaded_file.size > max_size_mb * 1024 * 1024:
+                st.error(f"文件大小超过限制 ({max_size_mb}MB)。")
+            else:
+                try:
+                    cleaner = ExcelCleaner()
                 
-                # 2. Sheet Selection
-                st.markdown(f"### {t('select_sheets')}")
-                selected_sheets = st.multiselect(
-                    t("select_sheets"),
-                    options=sheet_names,
-                    default=sheet_names, # Default select all
-                    label_visibility="collapsed",
-                    key="selected_sheets_input"
-                )
-                
-                if not selected_sheets:
-                    st.warning("Please select at least one sheet.")
-                else:
-                    # 3. Tabbed Configuration
-                    st.markdown(f"### {t('sheet_config')}")
-                    tabs = st.tabs(selected_sheets)
+                    # 1. Get Sheet Names
+                    # Read file as bytes once for caching
+                    file_bytes = uploaded_file.getvalue()
+                    sheet_names = cached_get_sheet_names(file_bytes, uploaded_file.name)
                     
-                    # Dictionary to store configs for each sheet
-                    sheet_configs = {}
+                    # 2. Sheet Selection
+                    st.markdown(f"### {t('select_sheets')}")
+                    selected_sheets = st.multiselect(
+                        t("select_sheets"),
+                        options=sheet_names,
+                        default=sheet_names, # Default select all
+                        label_visibility="collapsed",
+                        key="selected_sheets_input"
+                    )
                     
-                    for i, sheet in enumerate(selected_sheets):
-                        with tabs[i]:
-                            # Load specific sheet data preview using CACHE
-                            preview_df = cached_load_preview(file_bytes, uploaded_file.name, sheet)
-                                
-                            # Render Selector
-                            # Use sheet name as key prefix for isolation
-                            header_rows, data_start_row, key_columns = ui.render_interactive_structure_selector(
-                                preview_df, 
-                                key_prefix=f"sheet_{sheet}"
-                            )
-                            
-                            sheet_configs[sheet] = {
-                                "header_rows": header_rows,
-                                "data_start_row": data_start_row,
-                                "key_columns": key_columns
-                            }
-                    
-                    # Action Button
-                    st.markdown("<br>", unsafe_allow_html=True)
-                    col_btn1, col_btn2, col_btn3 = st.columns([1, 2, 1])
-                    with col_btn2:
-                        start_btn = st.button(t("batch_clean_btn"), use_container_width=True)
-                    
-                    if start_btn:
-                        # Progress Animation
-                        progress_bar = st.progress(0)
-                        status_text = st.empty()
+                    if not selected_sheets:
+                        st.warning("Please select at least one sheet.")
+                    else:
+                        # 3. Tabbed Configuration
+                        st.markdown(f"### {t('sheet_config')}")
+                        tabs = st.tabs(selected_sheets)
                         
-                        try:
-                            status_text.text(t("processing"))
-                            progress_bar.progress(10)
-                            
-                            sep = settings.get("sep_option", " / ")
-                            
-                            cleaned_results = {}
-                            total_sheets = len(selected_sheets)
-                            
-                            for idx, sheet in enumerate(selected_sheets):
-                                status_text.text(f"{t('cleaning')} - {sheet}")
-                                
-                                config = sheet_configs[sheet]
-                                
-                                # Clean Data
-                                start_time = time.time()
-                                try:
-                                    result = cleaner.clean_data(
-                                        uploaded_file,
-                                        header_rows=config["header_rows"],
-                                        data_start_row=config["data_start_row"],
-                                        key_columns=config["key_columns"],
-                                        separator=sep,
-                                        sheet_name=sheet
-                                    )
-                                    processing_time_ms = int((time.time() - start_time) * 1000)
+                        # Dictionary to store configs for each sheet
+                        sheet_configs = {}
+                        
+                        for i, sheet in enumerate(selected_sheets):
+                            with tabs[i]:
+                                # Load specific sheet data preview using CACHE
+                                preview_df = cached_load_preview(file_bytes, uploaded_file.name, sheet)
                                     
-                                    cleaned_results[sheet] = result['cleaned_df']
+                                # Render Selector
+                                # Use sheet name as key prefix for isolation
+                                header_rows, data_start_row, key_columns = ui.render_interactive_structure_selector(
+                                    preview_df, 
+                                    key_prefix=f"sheet_{sheet}"
+                                )
+                                
+                                sheet_configs[sheet] = {
+                                    "header_rows": header_rows,
+                                    "data_start_row": data_start_row,
+                                    "key_columns": key_columns
+                                }
+                        
+                        # Action Button
+                        st.markdown("<br>", unsafe_allow_html=True)
+                        col_btn1, col_btn2, col_btn3 = st.columns([1, 2, 1])
+                        with col_btn2:
+                            start_btn = st.button(t("batch_clean_btn"), use_container_width=True)
+                        
+                        if start_btn:
+                            # Progress Animation
+                            progress_bar = st.progress(0)
+                            status_text = st.empty()
+                            
+                            try:
+                                status_text.text(t("processing"))
+                                progress_bar.progress(10)
+                                
+                                sep = settings.get("sep_option", " / ")
+                                
+                                cleaned_results = {}
+                                total_sheets = len(selected_sheets)
+                                
+                                for idx, sheet in enumerate(selected_sheets):
+                                    status_text.text(f"{t('cleaning')} - {sheet}")
                                     
-                                    # Log Success
-                                    if log_service and st.session_state.user:
-                                        log_service.log_cleaning_task(
-                                            user_id=st.session_state.user.id,
-                                            file_name=uploaded_file.name,
-                                            file_size=uploaded_file.size,
-                                            row_count=len(result['cleaned_df']),
-                                            processing_time_ms=processing_time_ms,
-                                            status='success'
+                                    config = sheet_configs[sheet]
+                                    
+                                    # Clean Data
+                                    start_time = time.time()
+                                    try:
+                                        result = cleaner.clean_data(
+                                            uploaded_file,
+                                            header_rows=config["header_rows"],
+                                            data_start_row=config["data_start_row"],
+                                            key_columns=config["key_columns"],
+                                            separator=sep,
+                                            sheet_name=sheet
                                         )
+                                        processing_time_ms = int((time.time() - start_time) * 1000)
                                         
-                                except Exception as e:
-                                    # Log Failure
-                                    if log_service and st.session_state.user:
-                                        log_service.log_cleaning_task(
-                                            user_id=st.session_state.user.id,
-                                            file_name=uploaded_file.name,
-                                            file_size=uploaded_file.size,
-                                            status='failed',
-                                            error_message=str(e)
-                                        )
-                                    raise e
+                                        cleaned_results[sheet] = result['cleaned_df']
+                                        
+                                        # Log Success
+                                        if log_service and st.session_state.user:
+                                            log_service.log_cleaning_task(
+                                                user_id=st.session_state.user.id,
+                                                file_name=uploaded_file.name,
+                                                file_size=uploaded_file.size,
+                                                row_count=len(result['cleaned_df']),
+                                                processing_time_ms=processing_time_ms,
+                                                status='success'
+                                            )
+                                            
+                                    except Exception as e:
+                                        # Log Failure
+                                        if log_service and st.session_state.user:
+                                            log_service.log_cleaning_task(
+                                                user_id=st.session_state.user.id,
+                                                file_name=uploaded_file.name,
+                                                file_size=uploaded_file.size,
+                                                status='failed',
+                                                error_message=str(e)
+                                            )
+                                        raise e
+                                    
+                                    # Update progress
+                                    progress = int(10 + (idx + 1) / total_sheets * 80)
+                                    progress_bar.progress(progress)
+                                    
+                                # Store results (Dictionary of DFs)
+                                st.session_state.cleaned_data = cleaned_results
+                                st.session_state.raw_preview = None # Not applicable for batch
                                 
-                                # Update progress
-                                progress = int(10 + (idx + 1) / total_sheets * 80)
-                                progress_bar.progress(progress)
+                                progress_bar.progress(100)
+                                status_text.text(t("success"))
+                                st.balloons()
                                 
-                            # Store results (Dictionary of DFs)
-                            st.session_state.cleaned_data = cleaned_results
-                            st.session_state.raw_preview = None # Not applicable for batch
-                            
-                            progress_bar.progress(100)
-                            status_text.text(t("success"))
-                            st.balloons()
-                            
-                        except Exception as e:
-                            st.error(f"Error: {str(e)}")
-            except Exception as e:
-                st.error(f"Failed to load file: {e}")
+                            except Exception as e:
+                                st.error(f"Error: {str(e)}")
+                except Exception as e:
+                    st.error(f"Failed to load file: {e}")
 
-# Render Results
-if st.session_state.cleaned_data is not None:
-    st.markdown("---")
-    st.markdown(f"### {t('preview_clean')}")
-    
-    # Display results in tabs
-    result_sheets = list(st.session_state.cleaned_data.keys())
-    res_tabs = st.tabs(result_sheets)
-    
-    for i, sheet in enumerate(result_sheets):
-        with res_tabs[i]:
-            st.dataframe(st.session_state.cleaned_data[sheet], height=400, use_container_width=True)
-            
-    # Download All
-    st.markdown('<div class="spacer-lg"></div>', unsafe_allow_html=True)
-    col_dl1, col_dl2, col_dl3 = st.columns([1, 1, 1])
-    with col_dl2:
-        import io
-        buffer = io.BytesIO()
-        with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
-            for sheet, df in st.session_state.cleaned_data.items():
-                # Sheet name length limit in Excel is 31 chars
-                safe_sheet_name = sheet[:31]
-                df.to_excel(writer, sheet_name=safe_sheet_name, index=False)
+    # Render Results
+    if st.session_state.cleaned_data is not None:
+        st.markdown("---")
+        st.markdown(f"### {t('preview_clean')}")
         
-        st.download_button(
-            label=t("download_btn"),
-            data=buffer,
-            file_name="cleaned_batch_data.xlsx",
-            mime="application/vnd.ms-excel",
-            use_container_width=True
-        )
-else:
-    # Placeholder or Instructions when no data
-    if not uploaded_file:
-        ui.render_no_file_instruction()
+        # Display results in tabs
+        result_sheets = list(st.session_state.cleaned_data.keys())
+        res_tabs = st.tabs(result_sheets)
+        
+        for i, sheet in enumerate(result_sheets):
+            with res_tabs[i]:
+                st.dataframe(st.session_state.cleaned_data[sheet], height=400, use_container_width=True)
+                
+        # Download All
+        st.markdown('<div class="spacer-lg"></div>', unsafe_allow_html=True)
+        col_dl1, col_dl2, col_dl3 = st.columns([1, 1, 1])
+        with col_dl2:
+            import io
+            buffer = io.BytesIO()
+            with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
+                for sheet, df in st.session_state.cleaned_data.items():
+                    # Sheet name length limit in Excel is 31 chars
+                    safe_sheet_name = sheet[:31]
+                    df.to_excel(writer, sheet_name=safe_sheet_name, index=False)
+            
+            st.download_button(
+                label=t("download_btn"),
+                data=buffer,
+                file_name="cleaned_batch_data.xlsx",
+                mime="application/vnd.ms-excel",
+                use_container_width=True
+            )
+    else:
+        # Placeholder or Instructions when no data
+        if not uploaded_file:
+            ui.render_no_file_instruction()
