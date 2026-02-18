@@ -199,6 +199,14 @@ def render_ai_analysis_interface():
             except Exception as e:
                 st.error(f"模板解析失败: {str(e)}")
     
+    # 选择分析模式
+    analysis_mode = st.radio(
+        "选择分析模式",
+        options=["传统分析", "Agent智能分析"],
+        help="传统分析：按固定步骤执行分析 | Agent智能分析：AI自主决定分析步骤和工具调用",
+        horizontal=True
+    )
+    
     # 业务背景描述
     context = st.text_area(
         "业务背景描述（可选）",
@@ -219,83 +227,198 @@ def render_ai_analysis_interface():
         # 使用 st.status 显示实时进度
         with st.status("🤖 AI正在深度分析中，请稍候...", expanded=True) as status:
             try:
-                # 初始化组件
-                st.write("📡 正在初始化 AI 客户端...")
-                llm_client = LLMClient()
-                analyzer = DataAnalyzer(llm_client)
-                
-                # 创建进度容器
-                progress_container = st.container()
-                
-                # 步骤1: 数据理解与预处理
-                with progress_container:
-                    st.write("📊 **步骤 1/5**: 数据理解与预处理...")
-                preprocessing = analyzer._data_understanding_and_preprocessing(df)
-                with progress_container:
-                    # 从 structure_understanding 中获取列信息
-                    structure = preprocessing.get('structure_understanding', {})
-                    columns = structure.get('columns', [])
-                    # 如果没有返回列信息，使用原始数据的列
-                    if not columns and hasattr(df, 'columns'):
-                        columns = list(df.columns)
-                    st.write(f"   ✅ 识别了 {len(columns)} 个字段，{len(df)} 行数据")
-                
-                # 步骤2: 分析维度处理
-                with progress_container:
-                    st.write("🔍 **步骤 2/5**: 正在处理分析维度...")
-                merged_dims = analyzer._process_dimensions(
-                    df, template_dimensions if template_dimensions else None, user_dimensions if user_dimensions else None
-                )
-                with progress_container:
-                    template_count = len([d for d in merged_dims if d.source == 'template'])
-                    ai_count = len([d for d in merged_dims if d.source == 'ai'])
-                    user_count = len([d for d in merged_dims if d.source == 'user'])
-                    st.write(f"   ✅ 共识别 {len(merged_dims)} 个维度（模板:{template_count}, AI:{ai_count}, 用户:{user_count}）")
-                
-                # 步骤3: 探索性数据分析
-                with progress_container:
-                    st.write("📈 **步骤 3/5**: 探索性数据分析（EDA）...")
-                eda = analyzer._exploratory_data_analysis(df, preprocessing, merged_dims)
-                with progress_container:
-                    st.write(f"   ✅ 完成数据分布分析和统计检验")
-                
-                # 步骤4: 深度分析与洞察
-                with progress_container:
-                    st.write("💡 **步骤 4/5**: 深度分析与洞察挖掘...")
-                insights = analyzer._deep_analysis_and_insights(df, eda, merged_dims, context)
-                with progress_container:
-                    st.write(f"   ✅ 生成 {len(insights)} 个关键洞察")
-                
-                # 步骤5: 生成可视化建议
-                with progress_container:
-                    st.write("🎨 **步骤 5/5**: 生成可视化建议...")
-                viz_recommendations = analyzer._generate_visualization_recommendations(df, eda, insights, merged_dims)
-                with progress_container:
-                    st.write(f"   ✅ 推荐 {len(viz_recommendations)} 种可视化方案")
-                
-                # 显示处理日志（用于调试）
-                with progress_container:
-                    with st.expander("查看详细处理日志"):
-                        for log in analyzer.processing_log:
-                            st.text(log)
-                
-                # 构建完整结果
-                from analyzer import AnalysisResult
-                analysis_result = AnalysisResult(
-                    preprocessing=preprocessing,
-                    eda=eda,
-                    insights=insights,
-                    visualization_recommendations=viz_recommendations,
-                    merged_dimensions=merged_dims,
-                    processing_log=analyzer.processing_log
-                )
-                
-                # 保存分析结果到session state
-                st.session_state.analysis_result = analysis_result
-                st.session_state.selected_sheet = selected_sheet
-                
-                status.update(label="✅ AI 分析完成！", state="complete", expanded=False)
-                st.success("✅ 分析完成！请查看下方的分析结果。")
+                # Agent 智能分析模式
+                if analysis_mode == "Agent智能分析":
+                    st.write("🤖 启动 Agent 智能分析模式...")
+                    
+                    from agent_analyzer import AgentAnalyzer
+                    
+                    # 初始化 Agent 分析器
+                    agent_analyzer = AgentAnalyzer()
+                    
+                    # 创建实时显示区域
+                    st.write("### 📋 实时分析过程")
+                    progress_text = st.empty()
+                    steps_container = st.container()
+                    
+                    # 用于存储步骤的列表
+                    step_placeholders = []
+                    
+                    def step_callback(step):
+                        """每执行一步就实时显示"""
+                        with steps_container:
+                            # 根据步骤状态选择显示样式
+                            if step.action == "error":
+                                with st.expander(f"❌ 步骤 {step.step_number}: {step.action}", expanded=True):
+                                    st.error(f"错误: {step.observation[:300]}")
+                            elif step.tool_result and step.tool_result.success:
+                                with st.expander(f"✅ 步骤 {step.step_number}: {step.action}", expanded=False):
+                                    if step.thought:
+                                        st.info(f"**思考过程:**\n{step.thought}")
+                                    if step.action == "execute_python" and step.tool_result.success:
+                                        st.code(step.tool_result.result[:500], language="python")
+                                    elif step.action == "generate_visualization" and step.tool_result.success:
+                                        if os.path.exists(step.tool_result.result):
+                                            st.image(step.tool_result.result)
+                                    else:
+                                        st.text(step.observation[:500])
+                            else:
+                                with st.expander(f"ℹ️ 步骤 {step.step_number}: {step.action}", expanded=False):
+                                    if step.thought:
+                                        st.info(step.thought)
+                                    st.text(step.observation[:300])
+                    
+                    # 执行 Agent 分析（带实时回调）
+                    agent_result = agent_analyzer.analyze(df, context, step_callback=step_callback)
+                    
+                    # 显示最终分析结果
+                    st.write("## 📊 Agent 智能分析结果")
+                    
+                    # 显示关键指标卡片
+                    col1, col2, col3, col4 = st.columns(4)
+                    with col1:
+                        st.metric("执行步骤", len(agent_result.steps))
+                    with col2:
+                        st.metric("生成代码", len(agent_result.generated_code))
+                    with col3:
+                        st.metric("生成图表", len(agent_result.visualizations))
+                    with col4:
+                        st.metric("关键洞察", len(agent_result.insights))
+                    
+                    # 显示生成的图表
+                    if agent_result.visualizations:
+                        st.write("### 📈 数据可视化")
+                        chart_cols = st.columns(min(len(agent_result.visualizations), 3))
+                        for i, path in enumerate(agent_result.visualizations):
+                            if os.path.exists(path):
+                                with chart_cols[i % 3]:
+                                    st.image(path, use_container_width=True)
+                    
+                    # 显示最终报告
+                    st.write("### 📄 分析报告")
+                    report_container = st.container()
+                    with report_container:
+                        st.markdown(agent_result.final_report)
+                    
+                    # 生成可下载的报告文档
+                    st.write("### 📥 导出报告")
+                    
+                    # 构建完整的报告文本
+                    full_report = f"""# 数据分析报告
+
+## 分析概况
+- **数据形状**: {df.shape[0]} 行 × {df.shape[1]} 列
+- **分析步骤**: {len(agent_result.steps)} 步
+- **生成代码**: {len(agent_result.generated_code)} 段
+- **生成图表**: {len(agent_result.visualizations)} 个
+
+## 详细分析过程
+
+"""
+                    for step in agent_result.steps:
+                        full_report += f"\n### 步骤 {step.step_number}: {step.action}\n"
+                        if step.thought:
+                            full_report += f"**思考**: {step.thought}\n\n"
+                        full_report += f"**结果**: {step.observation[:500]}...\n\n"
+                    
+                    full_report += f"\n## 最终分析报告\n\n{agent_result.final_report}"
+                    
+                    # 提供下载按钮
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        st.download_button(
+                            label="📄 下载 Markdown 报告",
+                            data=full_report,
+                            file_name=f"analysis_report_{selected_sheet}.md",
+                            mime="text/markdown"
+                        )
+                    
+                    # 保存结果
+                    st.session_state.agent_result = agent_result
+                    st.session_state.selected_sheet = selected_sheet
+                    
+                    status.update(label="✅ Agent 分析完成！", state="complete")
+                    st.success("✅ Agent 智能分析完成！报告和图表已生成。")
+                    
+                else:
+                    # 传统分析模式
+                    # 初始化组件
+                    st.write("📡 正在初始化 AI 客户端...")
+                    llm_client = LLMClient()
+                    analyzer = DataAnalyzer(llm_client)
+                    
+                    # 创建进度容器
+                    progress_container = st.container()
+                    
+                    # 步骤1: 数据理解与预处理
+                    with progress_container:
+                        st.write("📊 **步骤 1/5**: 数据理解与预处理...")
+                    preprocessing = analyzer._data_understanding_and_preprocessing(df)
+                    with progress_container:
+                        # 从 structure_understanding 中获取列信息
+                        structure = preprocessing.get('structure_understanding', {})
+                        columns = structure.get('columns', [])
+                        # 如果没有返回列信息，使用原始数据的列
+                        if not columns and hasattr(df, 'columns'):
+                            columns = list(df.columns)
+                        st.write(f"   ✅ 识别了 {len(columns)} 个字段，{len(df)} 行数据")
+                    
+                    # 步骤2: 分析维度处理
+                    with progress_container:
+                        st.write("🔍 **步骤 2/5**: 正在处理分析维度...")
+                    merged_dims = analyzer._process_dimensions(
+                        df, template_dimensions if template_dimensions else None, user_dimensions if user_dimensions else None
+                    )
+                    with progress_container:
+                        template_count = len([d for d in merged_dims if d.source == 'template'])
+                        ai_count = len([d for d in merged_dims if d.source == 'ai'])
+                        user_count = len([d for d in merged_dims if d.source == 'user'])
+                        st.write(f"   ✅ 共识别 {len(merged_dims)} 个维度（模板:{template_count}, AI:{ai_count}, 用户:{user_count}）")
+                    
+                    # 步骤3: 探索性数据分析
+                    with progress_container:
+                        st.write("📈 **步骤 3/5**: 探索性数据分析（EDA）...")
+                    eda = analyzer._exploratory_data_analysis(df, preprocessing, merged_dims)
+                    with progress_container:
+                        st.write(f"   ✅ 完成数据分布分析和统计检验")
+                    
+                    # 步骤4: 深度分析与洞察
+                    with progress_container:
+                        st.write("💡 **步骤 4/5**: 深度分析与洞察挖掘...")
+                    insights = analyzer._deep_analysis_and_insights(df, eda, merged_dims, context)
+                    with progress_container:
+                        st.write(f"   ✅ 生成 {len(insights)} 个关键洞察")
+                    
+                    # 步骤5: 生成可视化建议
+                    with progress_container:
+                        st.write("🎨 **步骤 5/5**: 生成可视化建议...")
+                    viz_recommendations = analyzer._generate_visualization_recommendations(df, eda, insights, merged_dims)
+                    with progress_container:
+                        st.write(f"   ✅ 推荐 {len(viz_recommendations)} 种可视化方案")
+                    
+                    # 显示处理日志（用于调试）
+                    with progress_container:
+                        with st.expander("查看详细处理日志"):
+                            for log in analyzer.processing_log:
+                                st.text(log)
+                    
+                    # 构建完整结果
+                    from analyzer import AnalysisResult
+                    analysis_result = AnalysisResult(
+                        preprocessing=preprocessing,
+                        eda=eda,
+                        insights=insights,
+                        visualization_recommendations=viz_recommendations,
+                        merged_dimensions=merged_dims,
+                        processing_log=analyzer.processing_log
+                    )
+                    
+                    # 保存分析结果到session state
+                    st.session_state.analysis_result = analysis_result
+                    st.session_state.selected_sheet = selected_sheet
+                    
+                    status.update(label="✅ AI 分析完成！", state="complete", expanded=False)
+                    st.success("✅ 分析完成！请查看下方的分析结果。")
                 
             except Exception as e:
                 status.update(label="❌ 分析失败", state="error")

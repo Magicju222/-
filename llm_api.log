@@ -237,3 +237,65 @@
 2026-02-18 19:15:25,115 - INFO - [req_1771413307063] Response received
 2026-02-18 19:15:25,117 - INFO - [req_1771413325117] Request: [{"role": "system", "content": "You are a professional data analyst. Return results in JSON format."}, {"role": "user", "content": "\n基于探索性数据分析结果，进行深入分析以提取有价值的业务洞察。\n\n分析背景：\n通用数据分析\n\nEDA分析结果：\n{\"单变...
 2026-02-18 19:15:45,231 - INFO - [req_1771413325117] Response received
+2026-02-18 22:26:55,545 - INFO - moonshot client initialized with model: moonshot-v1-8k
+2026-02-18 22:26:55,547 - INFO - [req_1771424815547] Request: [{"role": "system", "content": "You are a professional data analyst. Return results in JSON format."}, {"role": "user", "content": "\n请从以下分析报告中提取分析维度。\n\n报告内容：\nWord模板已上传\n\n请提取：\n1. 报告中使用的分析维度\n2. 每个...
+2026-02-18 22:26:58,187 - INFO - [req_1771424815547] Response received
+2026-02-18 22:30:22,912 - INFO - moonshot client initialized with model: moonshot-v1-8k
+2026-02-18 22:30:22,912 - INFO - [req_1771425022912] Request: [{"role": "system", "content": "You are a professional data analyst. Return results in JSON format."}, {"role": "user", "content": "\n请从以下分析报告中提取分析维度。\n\n报告内容：\nWord模板已上传\n\n请提取：\n1. 报告中使用的分析维度\n2. 每个...
+2026-02-18 22:30:25,106 - INFO - [req_1771425022912] Response received
+2026-02-18 22:30:35,405 - INFO - moonshot client initialized with model: moonshot-v1-8k
+2026-02-18 22:30:35,405 - INFO - [req_1771425035405] Request: [{"role": "system", "content": "You are a professional data analyst. Return results in JSON format."}, {"role": "user", "content": "\n请从以下分析报告中提取分析维度。\n\n报告内容：\nWord模板已上传\n\n请提取：\n1. 报告中使用的分析维度\n2. 每个...
+2026-02-18 22:30:36,698 - INFO - [req_1771425035405] Response received
+2026-02-18 22:30:37,239 - INFO - moonshot client initialized with model: moonshot-v1-8k
+2026-02-18 22:30:37,259 - INFO - [req_1771425037259] Request: [{"role": "system", "content": "You are a professional data analyst. Return results in JSON format."}, {"role": "user", "content": "\n你是一位专业的数据分析师。请对以下数据进行全面理解和预处理分析。\n\n数据样本（前20行）：\n     公司车队      线路...
+2026-02-18 22:31:08,046 - INFO - [req_1771425037259] Response received
+2026-02-18 22:31:08,046 - ERROR - Failed to parse JSON response: Unterminated string starting at: line 149 column 9 (char 5662)
+2026-02-18 22:31:08,046 - ERROR - Response content: {
+    "structure_understanding": {
+        "columns": [
+            {
+                "name": "公司车队",
+                "data_type": "文本",
+                "business_meaning": "负责运营的公司车队名称",
+                "potential_relations": ["线路"]
+            },
+            {
+                "name": "线路",
+                "data_type": "文本",
+                "business_meaning": "公交线路编号",
+                "potential_relations": ["公司车队", "运营车数（台）", "运营班次（班）", "运营里程（公里）"]
+            },
+            {
+               ...
+2026-02-18 22:31:08,056 - INFO - [req_1771425068056] Request: [{"role": "system", "content": "You are a professional data analyst. Return results in JSON format."}, {"role": "user", "content": "\n基于数据特征，自动推荐分析维度。\n\n数据特征：\n{\"total_rows\": 93, \"total_cols\": 19...
+2026-02-18 22:31:20,670 - INFO - [req_1771425068056] Response received
+2026-02-18 22:31:20,701 - INFO - [req_1771425080701] Request: [{"role": "system", "content": "You are a professional data analyst. Return results in JSON format."}, {"role": "user", "content": "\n基于数据预处理结果，进行多维度探索性数据分析。\n\n预处理结果：\n{\"structure_understanding\": {...
+2026-02-18 22:31:38,324 - INFO - [req_1771425080701] Response received
+2026-02-18 22:31:38,325 - INFO - [req_1771425098325] Request: [{"role": "system", "content": "You are a professional data analyst. Return results in JSON format."}, {"role": "user", "content": "\n基于探索性数据分析结果，进行深入分析以提取有价值的业务洞察。\n\n分析背景：\n通用数据分析\n\nEDA分析结果：\n{\"单变...
+2026-02-18 22:31:57,478 - INFO - [req_1771425098325] Response received
+2026-02-18 22:32:21,968 - INFO - moonshot client initialized with model: moonshot-v1-8k
+2026-02-18 22:32:21,968 - INFO - [req_1771425141968] Request: [{"role": "system", "content": "You are a professional data analyst. Return results in JSON format."}, {"role": "user", "content": "\n请从以下分析报告中提取分析维度。\n\n报告内容：\nWord模板已上传\n\n请提取：\n1. 报告中使用的分析维度\n2. 每个...
+2026-02-18 22:32:23,796 - INFO - [req_1771425141968] Response received
+2026-02-18 22:32:35,060 - INFO - moonshot client initialized with model: moonshot-v1-8k
+2026-02-18 22:32:35,060 - INFO - [req_1771425155060] Request: [{"role": "system", "content": "You are a professional data analyst. Return results in JSON format."}, {"role": "user", "content": "\n请从以下分析报告中提取分析维度。\n\n报告内容：\nWord模板已上传\n\n请提取：\n1. 报告中使用的分析维度\n2. 每个...
+2026-02-18 22:32:36,630 - INFO - [req_1771425155060] Response received
+2026-02-18 22:32:38,426 - INFO - moonshot client initialized with model: moonshot-v1-8k
+2026-02-18 22:32:38,426 - INFO - [req_1771425158426] Request: [{"role": "system", "content": "You are a professional data analyst. Return results in JSON format."}, {"role": "user", "content": "\n请从以下分析报告中提取分析维度。\n\n报告内容：\nWord模板已上传\n\n请提取：\n1. 报告中使用的分析维度\n2. 每个...
+2026-02-18 22:32:39,826 - INFO - [req_1771425158426] Response received
+2026-02-18 22:41:07,163 - INFO - moonshot client initialized with model: kimi-k2.5
+2026-02-18 22:41:07,168 - INFO - [req_1771425667168] Request: [{"role": "system", "content": "You are a professional data analyst. Return results in JSON format."}, {"role": "user", "content": "\n你是一位专业的数据分析师。请对以下数据进行全面理解和预处理分析。\n\n数据样本（前20行）：\n     公司车队      线路...
+2026-02-18 22:41:07,734 - ERROR - [req_1771425667168] Error: Error code: 400 - {'error': {'message': 'invalid temperature: only 1 is allowed for this model', 'type': 'invalid_request_error'}}
+2026-02-18 22:41:08,847 - ERROR - [req_1771425667168] Error: Error code: 400 - {'error': {'message': 'invalid temperature: only 1 is allowed for this model', 'type': 'invalid_request_error'}}
+2026-02-18 22:41:10,959 - ERROR - [req_1771425667168] Error: Error code: 400 - {'error': {'message': 'invalid temperature: only 1 is allowed for this model', 'type': 'invalid_request_error'}}
+2026-02-18 22:41:10,970 - INFO - [req_1771425670970] Request: [{"role": "system", "content": "You are a professional data analyst. Return results in JSON format."}, {"role": "user", "content": "\n基于数据特征，自动推荐分析维度。\n\n数据特征：\n{\"total_rows\": 93, \"total_cols\": 19...
+2026-02-18 22:41:11,070 - ERROR - [req_1771425670970] Error: Error code: 400 - {'error': {'message': 'invalid temperature: only 1 is allowed for this model', 'type': 'invalid_request_error'}}
+2026-02-18 22:41:12,180 - ERROR - [req_1771425670970] Error: Error code: 400 - {'error': {'message': 'invalid temperature: only 1 is allowed for this model', 'type': 'invalid_request_error'}}
+2026-02-18 22:41:14,309 - ERROR - [req_1771425670970] Error: Error code: 400 - {'error': {'message': 'invalid temperature: only 1 is allowed for this model', 'type': 'invalid_request_error'}}
+2026-02-18 22:41:14,325 - INFO - [req_1771425674325] Request: [{"role": "system", "content": "You are a professional data analyst. Return results in JSON format."}, {"role": "user", "content": "\n基于数据预处理结果，进行多维度探索性数据分析。\n\n预处理结果：\n{\"structure_understanding\": {...
+2026-02-18 22:41:14,441 - ERROR - [req_1771425674325] Error: Error code: 400 - {'error': {'message': 'invalid temperature: only 1 is allowed for this model', 'type': 'invalid_request_error'}}
+2026-02-18 22:41:15,538 - ERROR - [req_1771425674325] Error: Error code: 400 - {'error': {'message': 'invalid temperature: only 1 is allowed for this model', 'type': 'invalid_request_error'}}
+2026-02-18 22:41:17,645 - ERROR - [req_1771425674325] Error: Error code: 400 - {'error': {'message': 'invalid temperature: only 1 is allowed for this model', 'type': 'invalid_request_error'}}
+2026-02-18 22:41:17,646 - INFO - [req_1771425677646] Request: [{"role": "system", "content": "You are a professional data analyst. Return results in JSON format."}, {"role": "user", "content": "\n基于探索性数据分析结果，进行深入分析以提取有价值的业务洞察。\n\n分析背景：\n通用数据分析\n\nEDA分析结果：\n{\"un...
+2026-02-18 22:41:17,747 - ERROR - [req_1771425677646] Error: Error code: 400 - {'error': {'message': 'invalid temperature: only 1 is allowed for this model', 'type': 'invalid_request_error'}}
+2026-02-18 22:41:18,854 - ERROR - [req_1771425677646] Error: Error code: 400 - {'error': {'message': 'invalid temperature: only 1 is allowed for this model', 'type': 'invalid_request_error'}}
+2026-02-18 22:41:20,967 - ERROR - [req_1771425677646] Error: Error code: 400 - {'error': {'message': 'invalid temperature: only 1 is allowed for this model', 'type': 'invalid_request_error'}}
