@@ -20,7 +20,8 @@
 - **自动代码生成**: AI 自动生成 Python 代码执行复杂数据分析
 - **智能可视化**: 自动识别数据特征并生成合适的图表
 - **完整分析报告**: 自动生成包含洞察、建议和可视化的专业报告
-- **报告导出**: 支持导出 Markdown 格式的完整分析报告
+- **报告导出**: 支持导出 Markdown 和 Word 格式的完整分析报告
+- **业务导向分析**: 聚焦业务洞察而非技术细节，提供 actionable insights
 
 ### 分析模式
 1. **传统分析模式**: 按固定步骤执行数据理解、探索性分析、深度洞察
@@ -100,7 +101,7 @@ uvicorn app.main:app --reload --port 8000
 - **实时过程**: 观察 AI 的每一步分析思路
 - **可视化图表**: 自动生成的数据图表
 - **分析报告**: 包含洞察和建议的完整报告
-- **导出报告**: 下载 Markdown 格式的报告文档
+- **导出报告**: 下载 Markdown 或 Word 格式的报告文档
 
 ## 📚 文档
 
@@ -125,6 +126,7 @@ AI Excel Cleaner/
 ├── ai_visualizer/            # AI 可视化模块
 │   ├── chart_generator.py    # 图表生成器
 │   └── prompts/              # AI 提示词模板
+├── report_generator.py       # 报告生成器 (Markdown/Word)
 ├── admin/                    # 后台管理模块
 │   ├── admin.py              # 管理面板主入口
 │   ├── system_config.py      # 系统配置管理

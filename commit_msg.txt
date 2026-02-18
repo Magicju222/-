@@ -1,0 +1,11 @@
+feat: add Agent-based AI data analysis with Kimi K2.5
+
+- Implement AgentAnalyzer with Tool Use capability
+- Add real-time analysis step visualization
+- Support automatic code generation and execution
+- Add visualization generation with matplotlib
+- Implement report export (Markdown format)
+- Add step callback for real-time UI updates
+- Fix Kimi K2.5 Tool Use compatibility (reasoning_content)
+- Update README with AI analysis documentation
+- Add test scripts for API and model validation

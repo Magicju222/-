@@ -303,34 +303,30 @@ def render_ai_analysis_interface():
                     # 生成可下载的报告文档
                     st.write("### 📥 导出报告")
                     
-                    # 构建完整的报告文本
-                    full_report = f"""# 数据分析报告
-
-## 分析概况
-- **数据形状**: {df.shape[0]} 行 × {df.shape[1]} 列
-- **分析步骤**: {len(agent_result.steps)} 步
-- **生成代码**: {len(agent_result.generated_code)} 段
-- **生成图表**: {len(agent_result.visualizations)} 个
-
-## 详细分析过程
-
-"""
-                    for step in agent_result.steps:
-                        full_report += f"\n### 步骤 {step.step_number}: {step.action}\n"
-                        if step.thought:
-                            full_report += f"**思考**: {step.thought}\n\n"
-                        full_report += f"**结果**: {step.observation[:500]}...\n\n"
+                    # 使用报告生成器生成报告
+                    from report_generator import generate_markdown_report, generate_word_report
                     
-                    full_report += f"\n## 最终分析报告\n\n{agent_result.final_report}"
+                    # 生成 Markdown 报告
+                    md_report = generate_markdown_report(agent_result, df, selected_sheet)
+                    
+                    # 生成 Word 报告
+                    word_report = generate_word_report(agent_result, df, selected_sheet)
                     
                     # 提供下载按钮
-                    col1, col2 = st.columns(2)
+                    col1, col2, col3 = st.columns(3)
                     with col1:
                         st.download_button(
                             label="📄 下载 Markdown 报告",
-                            data=full_report,
+                            data=md_report,
                             file_name=f"analysis_report_{selected_sheet}.md",
                             mime="text/markdown"
+                        )
+                    with col2:
+                        st.download_button(
+                            label="📝 下载 Word 报告",
+                            data=word_report.getvalue(),
+                            file_name=f"analysis_report_{selected_sheet}.docx",
+                            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
                         )
                     
                     # 保存结果
