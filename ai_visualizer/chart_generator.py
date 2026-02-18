@@ -5,6 +5,7 @@ AI图表生成器
 
 import os
 import re
+import json
 import tempfile
 import pandas as pd
 import numpy as np
@@ -242,7 +243,8 @@ plt.close()
             'pd': pd,
             'np': np,
             'plt': plt,
-            'df': df
+            'df': df,
+            'json': json
         }
         
         safe_locals = {}

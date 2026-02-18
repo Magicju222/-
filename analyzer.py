@@ -182,6 +182,11 @@ class DataAnalyzer:
             result = self.llm.analyze_json(prompt)
             dimensions_data = result.get('dimensions', [])
             
+            # 如果LLM返回空维度，使用默认维度
+            if not dimensions_data:
+                self._log("LLM返回空维度，使用默认维度")
+                return self._get_default_dimensions(df)
+            
             # 确保包含三类分析
             has_univariate = any(d.get('type') == 'univariate' for d in dimensions_data)
             has_bivariate = any(d.get('type') == 'bivariate' for d in dimensions_data)
@@ -230,6 +235,7 @@ class DataAnalyzer:
                 )
                 dimensions.append(dim)
             
+            self._log(f"成功生成 {len(dimensions)} 个AI维度")
             return dimensions
             
         except Exception as e:
@@ -240,9 +246,12 @@ class DataAnalyzer:
     def _get_default_dimensions(self, df: pd.DataFrame) -> List[AnalysisDimension]:
         """获取默认分析维度"""
         numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
+        categorical_cols = df.select_dtypes(include=['object', 'category']).columns.tolist()
+        all_cols = list(df.columns)
+        
         dimensions = []
         
-        # 单变量分析
+        # 单变量分析 - 数值列
         for col in numeric_cols[:3]:
             dimensions.append(AnalysisDimension(
                 name=f'{col}分布分析',
@@ -254,6 +263,19 @@ class DataAnalyzer:
                 reason='基础单变量分析'
             ))
         
+        # 单变量分析 - 类别列（如果没有数值列，使用类别列）
+        if not numeric_cols:
+            for col in categorical_cols[:3]:
+                dimensions.append(AnalysisDimension(
+                    name=f'{col}分布分析',
+                    dim_type='univariate',
+                    source='ai',
+                    priority=2,
+                    columns=[col],
+                    method='频次统计',
+                    reason='基础单变量分析'
+                ))
+        
         # 双变量分析
         if len(numeric_cols) >= 2:
             dimensions.append(AnalysisDimension(
@@ -263,6 +285,17 @@ class DataAnalyzer:
                 priority=2,
                 columns=numeric_cols[:2],
                 method='相关性分析',
+                reason='基础双变量分析'
+            ))
+        elif len(categorical_cols) >= 2:
+            # 如果没有数值列，使用类别列做交叉分析
+            dimensions.append(AnalysisDimension(
+                name=f'{categorical_cols[0]}与{categorical_cols[1]}交叉分析',
+                dim_type='bivariate',
+                source='ai',
+                priority=2,
+                columns=categorical_cols[:2],
+                method='交叉表分析',
                 reason='基础双变量分析'
             ))
         
@@ -277,7 +310,31 @@ class DataAnalyzer:
                 method='主成分分析',
                 reason='基础多变量分析'
             ))
+        elif len(all_cols) >= 3:
+            # 使用任意类型的列做多变量分析
+            dimensions.append(AnalysisDimension(
+                name='多变量关系分析',
+                dim_type='multivariate',
+                source='ai',
+                priority=2,
+                columns=all_cols[:3],
+                method='综合分析',
+                reason='基础多变量分析'
+            ))
         
+        # 如果仍然没有维度，至少创建一个通用维度
+        if not dimensions and all_cols:
+            dimensions.append(AnalysisDimension(
+                name='数据概览分析',
+                dim_type='univariate',
+                source='ai',
+                priority=2,
+                columns=all_cols[:5],
+                method='描述统计',
+                reason='基础数据分析'
+            ))
+        
+        self._log(f"生成默认维度: {len(dimensions)} 个")
         return dimensions
     
     def merge_dimensions(self,
