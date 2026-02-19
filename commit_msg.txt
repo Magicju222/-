@@ -1,11 +1,17 @@
-feat: add Agent-based AI data analysis with Kimi K2.5
+feat: enhance Agent analysis with business insights and Word export
 
-- Implement AgentAnalyzer with Tool Use capability
-- Add real-time analysis step visualization
-- Support automatic code generation and execution
-- Add visualization generation with matplotlib
-- Implement report export (Markdown format)
-- Add step callback for real-time UI updates
-- Fix Kimi K2.5 Tool Use compatibility (reasoning_content)
-- Update README with AI analysis documentation
-- Add test scripts for API and model validation
+- Refactor Agent system prompt to focus on business insights
+- Add detailed field analysis with business meaning interpretation
+- Improve analysis flow: field understanding -> business metrics -> insights
+- Fix Agent file reading error by prohibiting external file access
+- Add report_generator.py for Markdown and Word report generation
+- Implement Word document export with professional formatting
+- Update README with new features and architecture
+- Add business-oriented report template with actionable insights
+
+Key Improvements:
+- Agent now focuses on business value rather than technical details
+- Reports include business context, insights, opportunities, and recommendations
+- Dual export format: Markdown and Word (.docx)
+- Real-time analysis step visualization
+- Professional Word reports with tables and formatting

@@ -157,21 +157,115 @@ def render_ai_analysis_interface():
         st.warning("请先完成数据清洗")
         return
     
-    # 选择工作表
+    # 选择工作表（支持多选）
     sheet_names = list(cleaned_data.keys())
     if len(sheet_names) > 1:
-        selected_sheet = st.selectbox("选择要分析的工作表", sheet_names)
+        selected_sheets = st.multiselect(
+            "选择要分析的工作表（可多选）",
+            sheet_names,
+            default=sheet_names[:1] if sheet_names else None,
+            help="选择多个工作表进行综合分析，AI将分析所有选中工作表之间的数据关联"
+        )
     else:
-        selected_sheet = sheet_names[0]
+        selected_sheets = sheet_names
     
-    df = cleaned_data[selected_sheet]
+    if not selected_sheets:
+        st.warning("请至少选择一个工作表进行分析")
+        return
+    
+    # 生成 selected_sheet 变量
+    if len(selected_sheets) == 1:
+        selected_sheet = selected_sheets[0]
+    else:
+        selected_sheet = "_".join(selected_sheets)
+    
+    # 显示已保存的分析结果（如果存在）
+    if (st.session_state.get('agent_result') and 
+        st.session_state.get('selected_sheet') == selected_sheet and
+        st.session_state.get('agent_dfs')):
+        
+        agent_result = st.session_state.agent_result
+        stored_dfs = st.session_state.agent_dfs
+        
+        st.write("## 📊 Agent 智能分析结果")
+        
+        col1, col2, col3, col4 = st.columns(4)
+        with col1:
+            st.metric("执行步骤", len(agent_result.steps))
+        with col2:
+            st.metric("生成代码", len(agent_result.generated_code))
+        with col3:
+            st.metric("生成图表", len(agent_result.visualizations))
+        with col4:
+            st.metric("关键洞察", len(agent_result.insights))
+        
+        if agent_result.visualizations:
+            st.write("### 📈 数据可视化")
+            chart_cols = st.columns(min(len(agent_result.visualizations), 3))
+            for i, path in enumerate(agent_result.visualizations):
+                if os.path.exists(path):
+                    with chart_cols[i % 3]:
+                        st.image(path, use_container_width=True)
+        
+        st.write("### 📄 分析报告")
+        st.markdown(agent_result.final_report)
+        
+        st.write("### 📥 导出报告")
+        
+        from report_generator import generate_markdown_report, generate_word_report
+        
+        md_report = generate_markdown_report(agent_result, stored_dfs, selected_sheet)
+        word_report = generate_word_report(agent_result, stored_dfs, selected_sheet)
+        
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.download_button(
+                label="📄 下载 Markdown 报告",
+                data=md_report,
+                file_name=f"analysis_report_{selected_sheet}.md",
+                mime="text/markdown"
+            )
+        with col2:
+            st.download_button(
+                label="📝 下载 Word 报告",
+                data=word_report.getvalue(),
+                file_name=f"analysis_report_{selected_sheet}.docx",
+                mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+            )
+        
+        if st.button("🔄 重新分析", type="secondary"):
+            del st.session_state.agent_result
+            del st.session_state.selected_sheet
+            if 'agent_dfs' in st.session_state:
+                del st.session_state.agent_dfs
+            st.rerun()
+        
+        st.markdown("---")
+        st.info("💡 如需重新分析，请点击上方「重新分析」按钮")
+        return
+    
+    # 合并多表数据用于分析
+    dfs = {name: cleaned_data[name] for name in selected_sheets}
+    
+    if len(selected_sheets) == 1:
+        df = dfs[selected_sheet]
+    else:
+        import pandas as pd
+        df = pd.concat(dfs.values(), ignore_index=True)
     
     # 分析模板上传（可选）
     with st.expander("📄 上传分析模板（可选）", expanded=False):
+        st.markdown("""
+        **说明**：上传以往的分析报告作为格式参考模板
+        - 支持格式：Word (.docx)、PDF (.pdf)、图片 (.png, .jpg, .jpeg)
+        - 系统会提取模板的分析维度和格式作为参考
+        """)
+        
         template_file = st.file_uploader(
-            "上传以往的分析报告作为模板（Word/PDF/图片）",
+            "选择模板文件",
             type=['docx', 'pdf', 'png', 'jpg', 'jpeg'],
-            key="template_upload"
+            key="template_upload",
+            help="上传Word、PDF或图片格式的分析报告模板"
         )
         
         template_dimensions = []
@@ -269,7 +363,7 @@ def render_ai_analysis_interface():
                                     st.text(step.observation[:300])
                     
                     # 执行 Agent 分析（带实时回调）
-                    agent_result = agent_analyzer.analyze(df, context, step_callback=step_callback)
+                    agent_result = agent_analyzer.analyze(dfs, context, step_callback=step_callback)
                     
                     # 显示最终分析结果
                     st.write("## 📊 Agent 智能分析结果")
@@ -307,10 +401,10 @@ def render_ai_analysis_interface():
                     from report_generator import generate_markdown_report, generate_word_report
                     
                     # 生成 Markdown 报告
-                    md_report = generate_markdown_report(agent_result, df, selected_sheet)
+                    md_report = generate_markdown_report(agent_result, dfs, selected_sheet)
                     
                     # 生成 Word 报告
-                    word_report = generate_word_report(agent_result, df, selected_sheet)
+                    word_report = generate_word_report(agent_result, dfs, selected_sheet)
                     
                     # 提供下载按钮
                     col1, col2, col3 = st.columns(3)
@@ -332,6 +426,7 @@ def render_ai_analysis_interface():
                     # 保存结果
                     st.session_state.agent_result = agent_result
                     st.session_state.selected_sheet = selected_sheet
+                    st.session_state.agent_dfs = dfs
                     
                     status.update(label="✅ Agent 分析完成！", state="complete")
                     st.success("✅ Agent 智能分析完成！报告和图表已生成。")

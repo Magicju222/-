@@ -41,26 +41,48 @@ class AgentAnalysisResult:
     generated_code: List[str] = field(default_factory=list)
     visualizations: List[str] = field(default_factory=list)
     insights: List[str] = field(default_factory=list)
+    multi_table_info: Dict = field(default_factory=dict)
+    table_relations: List[Dict] = field(default_factory=list)
 
 
 class DataAnalysisTools:
     """数据分析工具集"""
     
-    def __init__(self, df: pd.DataFrame):
-        self.df = df
+    def __init__(self, dfs: Dict[str, pd.DataFrame]):
+        if isinstance(dfs, pd.DataFrame):
+            dfs = {"default": dfs}
+        self.dfs = dfs
+        self.primary_df = list(dfs.values())[0] if dfs else pd.DataFrame()
+        self.df = self.primary_df
         self.execution_namespace = {
             'pd': pd,
             'np': np,
-            'df': df,
-            'plt': None,  # 懒加载 matplotlib
+            'df': self.df,
+            'dfs': dfs,
+            'plt': None,
         }
     
     def get_data_info(self) -> str:
         """获取数据基本信息"""
+        if len(self.dfs) > 1:
+            info = {
+                'total_tables': len(self.dfs),
+                'tables': {}
+            }
+            for name, df in self.dfs.items():
+                info['tables'][name] = {
+                    'shape': df.shape,
+                    'columns': list(df.columns),
+                    'dtypes': {k: str(v) for k, v in df.dtypes.to_dict().items()},
+                    'missing': df.isnull().sum().to_dict(),
+                    'sample': df.head(3).to_dict(orient='records') if len(df) > 0 else []
+                }
+            return json.dumps(info, ensure_ascii=False, indent=2)
+        
         info = {
             'shape': self.df.shape,
             'columns': list(self.df.columns),
-            'dtypes': self.df.dtypes.to_dict(),
+            'dtypes': {k: str(v) for k, v in self.df.dtypes.to_dict().items()},
             'missing': self.df.isnull().sum().to_dict(),
             'memory_usage': self.df.memory_usage(deep=True).sum()
         }
@@ -103,8 +125,19 @@ class DataAnalysisTools:
     def query_data(self, query_description: str) -> ToolResult:
         """根据描述查询数据"""
         try:
-            # 这里可以实现自然语言到 pandas 查询的转换
-            # 简化版本：返回数据的基本统计
+            if len(self.dfs) > 1:
+                result = {
+                    'tables': {},
+                    'query': query_description
+                }
+                for name, df in self.dfs.items():
+                    result['tables'][name] = {
+                        'head': df.head(10).to_dict(),
+                        'describe': df.describe().to_dict(),
+                        'shape': df.shape
+                    }
+                return ToolResult(success=True, result=json.dumps(result, indent=2, default=str))
+            
             result = {
                 'head': self.df.head(10).to_dict(),
                 'describe': self.df.describe().to_dict(),
@@ -126,29 +159,45 @@ class DataAnalysisTools:
             chart_type = viz_config.get('chart_type', 'bar')
             columns = viz_config.get('columns', [])
             title = viz_config.get('title', 'Chart')
+            source_table = viz_config.get('table', list(self.dfs.keys())[0] if self.dfs else 'default')
+            
+            df = self.dfs.get(source_table, self.df)
             
             plt.figure(figsize=(10, 6))
             
             if chart_type == 'histogram' and columns:
-                self.df[columns[0]].hist(bins=20)
-                plt.xlabel(columns[0])
-                plt.ylabel('Frequency')
+                if columns[0] in df.columns:
+                    df[columns[0]].hist(bins=20)
+                    plt.xlabel(columns[0])
+                    plt.ylabel('Frequency')
             elif chart_type == 'bar' and columns:
-                self.df[columns[0]].value_counts().plot(kind='bar')
-                plt.xlabel(columns[0])
-                plt.ylabel('Count')
+                if columns[0] in df.columns:
+                    df[columns[0]].value_counts().plot(kind='bar')
+                    plt.xlabel(columns[0])
+                    plt.ylabel('Count')
             elif chart_type == 'scatter' and len(columns) >= 2:
-                plt.scatter(self.df[columns[0]], self.df[columns[1]])
-                plt.xlabel(columns[0])
-                plt.ylabel(columns[1])
+                if columns[0] in df.columns and columns[1] in df.columns:
+                    plt.scatter(df[columns[0]], df[columns[1]])
+                    plt.xlabel(columns[0])
+                    plt.ylabel(columns[1])
             elif chart_type == 'correlation':
-                numeric_df = self.df.select_dtypes(include=[np.number])
+                numeric_df = df.select_dtypes(include=[np.number])
                 sns.heatmap(numeric_df.corr(), annot=True, cmap='coolwarm')
+            elif chart_type == 'multi_table_compare' and len(self.dfs) > 1:
+                fig, axes = plt.subplots(1, len(self.dfs), figsize=(15, 5))
+                if len(self.dfs) == 1:
+                    axes = [axes]
+                for idx, (name, table_df) in enumerate(self.dfs.items()):
+                    if columns and columns[0] in table_df.columns:
+                        table_df[columns[0]].value_counts().plot(kind='bar', ax=axes[idx])
+                        axes[idx].set_title(f'{name}: {columns[0]}')
+                        axes[idx].set_xlabel(columns[0])
+                        axes[idx].set_ylabel('Count')
+                plt.tight_layout()
             
             plt.title(title)
             plt.tight_layout()
             
-            # 保存图表
             import tempfile
             chart_path = tempfile.mktemp(suffix='.png')
             plt.savefig(chart_path, dpi=150, bbox_inches='tight')
@@ -278,22 +327,126 @@ class AgentAnalyzer:
             }
         ]
     
-    def analyze(self, df: pd.DataFrame, context: str = "", step_callback: callable = None) -> AgentAnalysisResult:
+    def analyze(self, dfs: Dict[str, pd.DataFrame], context: str = "", step_callback: callable = None) -> AgentAnalysisResult:
         """
         执行 Agent 驱动的数据分析
         
         Args:
-            df: 要分析的数据框
+            dfs: 要分析的数据框字典，键为工作表名，值为数据框
             context: 分析背景信息
         
         Returns:
             AgentAnalysisResult: 分析结果
         """
-        result = AgentAnalysisResult(original_data=df)
-        tools_executor = DataAnalysisTools(df)
+        if isinstance(dfs, pd.DataFrame):
+            dfs = {"default": dfs}
+        
+        result = AgentAnalysisResult(original_data=pd.concat(dfs.values(), ignore_index=True) if len(dfs) > 1 else list(dfs.values())[0])
+        tools_executor = DataAnalysisTools(dfs)
+        
+        # 判断是否为多表分析
+        is_multi_table = len(dfs) > 1
+        table_names = list(dfs.keys())
         
         # 系统提示词 - 聚焦业务洞察
-        system_prompt = f"""你是一位资深业务数据分析师，专注于从数据中发现业务价值和洞察。
+        if is_multi_table:
+            system_prompt = f"""你是一位资深业务数据分析师，专注于从多张相关的数据表中发现业务价值和洞察。
+
+## 当前分析模式：多表关联分析
+
+你正在分析 {len(dfs)} 张相互关联的数据表：{table_names}
+
+## 你的分析原则
+
+1. **多表关联分析**
+   - 识别不同工作表之间的关联字段和关系
+   - 分析表与表之间的数据一致性
+   - 发现跨表的业务逻辑
+
+2. **深入理解业务含义**
+   - 每个字段都代表什么业务概念？
+   - 不同表之间的数据关系反映了什么业务逻辑？
+   - 异常数据可能暗示什么业务问题？
+
+3. **关注数据背后的故事**
+   - 不要只报告统计数字，要解释数字的含义
+   - 发现数据中的模式、趋势和异常
+   - 关联不同表，发现隐藏的业务洞察
+
+4. **提供 actionable insights**
+   - 分析结果要能指导业务决策
+   - 指出数据反映的业务机会或风险
+   - 给出具体的改进建议
+
+## 分析流程
+
+**第一步：多表结构理解**
+- 识别每张表的业务含义和字段
+- 找出表之间的关联字段（如ID、日期、类别等）
+- 理解表之间的业务关系（主从关系、关联关系等）
+
+**第二步：表间关联分析**
+- 使用 execute_python 进行跨表分析
+- 分析关联字段的数据匹配情况
+- 发现表之间的数据一致性/差异
+
+**第三步：综合业务分析**
+- 基于多表数据进行综合分析
+- 计算跨表的业务指标
+- 发现跨表的业务模式和异常
+
+**第四步：生成综合业务报告**
+- 用业务语言描述发现，避免技术术语
+- 突出表间关联的重要发现
+- 提供3-5个核心洞察和具体业务建议
+
+## 工具使用指南
+
+- `get_data_info`: 获取所有表的结构和数据概览
+- `execute_python`: 执行跨表分析，使用 `dfs` 字典访问各表数据
+- `generate_visualization`: 创建跨表对比图表（可指定 table 参数选择数据源）
+- `statistical_analysis`: 进行统计分析
+
+## 数据访问方式
+
+在 execute_python 中使用：
+- `dfs` 字典访问多表数据，如 `dfs['表名1']`, `dfs['表名2']`
+- `df` 访问第一张表的数据
+
+## 数据完整性要求
+
+⚠️ **重要：必须显示完整数据**
+- 使用 `print(df.to_string())` 显示完整数据，不要使用 `head()` 截断
+- 对于分组统计，确保显示所有分组结果
+- 对于汇总分析，列出所有类别/分组的完整数据
+- 不要遗漏任何数据行，确保分析完整性
+
+## 数据清洗要求
+
+⚠️ **重要：分析前必须过滤无效数据**
+- 数值型数据：使用 `df[col].dropna()` 过滤空值，再用 `df[col][df[col] != 0]` 过滤零值
+- 文本型数据：过滤空字符串 `''` 和 `'0'`
+- 示例代码：`valid_data = df[col].dropna()[df[col].dropna() != 0]`
+- 所有统计计算都基于过滤后的有效数据
+
+## 重要提醒
+
+❌ 不要做的：
+- 只分析单张表而忽略表间关系
+- 只报告"数据有XX行XX列"这类无意义信息
+- 使用复杂的技术术语
+- 使用 `head()` 截断数据显示
+
+✅ 应该做的：
+- 重点分析表与表之间的关联和差异
+- 解释跨表分析发现的业务含义
+- 给出基于综合分析的業務建议
+- 确保显示完整数据，不遗漏任何记录
+
+请开始多表关联业务分析。
+"""
+        else:
+            system_prompt = f"""你是一位资深业务数据分析师，专注于从数据中发现业务价值和洞察。
 
 ## 你的分析原则
 
@@ -342,6 +495,22 @@ class AgentAnalyzer:
 - `generate_visualization`: 创建能说明业务问题的图表
 - `statistical_analysis`: 进行统计分析，但**重点解释统计结果的业务意义**
 
+## 数据完整性要求
+
+⚠️ **重要：必须显示完整数据**
+- 使用 `print(df.to_string())` 显示完整数据，不要使用 `head()` 截断
+- 对于分组统计，确保显示所有分组结果
+- 对于汇总分析，列出所有类别/分组的完整数据
+- 不要遗漏任何数据行，确保分析完整性
+
+## 数据清洗要求
+
+⚠️ **重要：分析前必须过滤无效数据**
+- 数值型数据：使用 `df[col].dropna()` 过滤空值，再用 `df[col][df[col] != 0]` 过滤零值
+- 文本型数据：过滤空字符串 `''` 和 `'0'`
+- 示例代码：`valid_data = df[col].dropna()[df[col].dropna() != 0]`
+- 所有统计计算都基于过滤后的有效数据
+
 ## 重要提醒
 
 ❌ 不要做的：
@@ -350,6 +519,7 @@ class AgentAnalyzer:
 - 使用复杂的技术术语
 - **不要尝试读取外部文件**（如 pd.read_excel('data.xlsx')），数据已通过 `df` 变量提供
 - **不要保存文件到本地**，只需分析内存中的数据
+- 使用 `head()` 截断数据显示
 
 ✅ 应该做的：
 - 解释"为什么这个数据分布很重要"
@@ -357,20 +527,80 @@ class AgentAnalyzer:
 - 用业务语言说明"这个相关性揭示了什么机会"
 - 给出"基于数据，建议采取什么行动"
 - **所有分析都基于提供的 `df` 数据框**，直接使用 `df` 变量
+- 确保显示完整数据，不遗漏任何记录
 
 请开始你的深度业务分析。
 """
         
         # 构建初始消息 - 强调业务分析
         # 生成字段描述
-        field_descriptions = []
-        for col in df.columns:
-            dtype = df[col].dtype
-            sample_values = df[col].dropna().head(3).tolist()
-            unique_count = df[col].nunique()
-            field_descriptions.append(f"- {col}: {dtype}, 示例值: {sample_values}, 唯一值: {unique_count}")
-        
-        initial_message = f"""请对以下数据进行深度业务分析。
+        if is_multi_table:
+            field_descriptions = []
+            for table_name, df in dfs.items():
+                table_info = [f"### 工作表: {table_name} ({df.shape[0]}行 x {df.shape[1]}列)"]
+                for col in df.columns:
+                    dtype = df[col].dtype
+                    sample_values = df[col].dropna().head(3).tolist()
+                    unique_count = df[col].nunique()
+                    table_info.append(f"  - {col}: {dtype}, 示例值: {sample_values}, 唯一值: {unique_count}")
+                field_descriptions.append("\n".join(table_info))
+            
+            initial_message = f"""请对以下多张相关数据进行深度业务分析。
+
+## 业务背景
+{context if context else "这是多份相关的业务数据，需要从中提取有价值的业务洞察，并分析表之间的关系。"}
+
+## 数据概览
+**正在分析 {len(dfs)} 张工作表：**
+{chr(10).join(field_descriptions)}
+
+## 分析要求
+
+请按以下步骤进行多表关联分析：
+
+1. **业务指标识别**
+   - 识别各表中的核心业务指标（如金额、数量、比率等）
+   - 找出可以对比分析的维度（如车队、线路、时间等）
+   - 确定指标的计算方式和业务含义
+
+2. **业务指标对比分析**
+   - 使用 execute_python 进行跨表业务指标对比
+   - 计算各维度下的业务指标汇总值（sum、mean、max、min等）
+   - 生成业务指标对比表格，显示所有对比对象的数据
+   - **重点**：分析业务指标的差异，而非数据行数
+
+3. **业务洞察提取**
+   - 哪些业务指标表现突出？哪些需要关注？
+   - 不同维度间的业务指标差异说明了什么？
+   - 存在什么业务机会或风险？
+
+4. **生成业务报告**
+   - 用业务语言总结关键发现
+   - 提供业务指标对比的核心洞察
+   - 给出具体的业务行动建议
+
+**禁止事项**：
+- ❌ 不要分析"多少行多少列"这类数据质量信息
+- ❌ 不要报告"汇总行数量"等技术细节
+- ❌ 不要关注数据结构问题
+
+**必须事项**：
+- ✅ 必须分析具体的业务指标数值
+- ✅ 必须进行业务指标对比（如各车队收入对比、各线路效率对比）
+- ✅ 必须生成业务指标对比表格
+- ✅ 必须给出业务层面的结论和建议
+
+请开始多表关联业务分析，重点关注业务指标的对比和洞察。"""
+        else:
+            df = list(dfs.values())[0]
+            field_descriptions = []
+            for col in df.columns:
+                dtype = df[col].dtype
+                sample_values = df[col].dropna().head(3).tolist()
+                unique_count = df[col].nunique()
+                field_descriptions.append(f"- {col}: {dtype}, 示例值: {sample_values}, 唯一值: {unique_count}")
+            
+            initial_message = f"""请对以下数据进行深度业务分析。
 
 ## 业务背景
 {context if context else "这是一份业务数据，需要从中提取有价值的业务洞察。"}
@@ -387,24 +617,34 @@ class AgentAnalyzer:
    - 每个字段代表什么业务概念？
    - 识别关键业务指标
    - 字段间可能存在什么业务关系？
+   - **数据完整性要求**：列出所有字段，不遗漏任何字段信息
 
 2. **业务维度分析**
    - 使用 execute_python 深入分析数据分布
    - 计算关键业务指标（如平均值、占比、增长率等）
    - 识别异常值并分析其业务含义
    - 发现数据间的关联性和模式
+   - **数据完整性要求**：使用 `to_string()` 显示完整数据，不要使用 `head()` 截断
 
 3. **业务洞察提取**
    - 数据反映了什么业务现状？
    - 有哪些值得关注的业务现象？
    - 存在什么业务机会或风险？
+   - **数据完整性要求**：确保所有分组、所有类别的数据都被分析到
 
 4. **生成业务报告**
    - 用业务语言总结关键发现
    - 提供3-5个核心洞察
    - 给出具体的业务行动建议
+   - **数据完整性要求**：报告中的数据表格必须包含所有记录
 
-请开始分析，重点关注数据背后的业务含义，而非技术实现细节。"""
+请开始分析，重点关注数据背后的业务含义，而非技术实现细节。
+
+**特别提醒**：
+- 每个分析步骤都必须确保数据完整性
+- 分组统计时要显示所有分组结果
+- 列表数据时不要截断，显示完整列表
+- 如果发现数据有遗漏，必须重新分析确保完整"""
         
         messages = [
             {"role": "system", "content": system_prompt},
