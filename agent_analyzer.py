@@ -7,10 +7,13 @@ import os
 import json
 import pandas as pd
 import numpy as np
-from typing import Dict, List, Any, Optional, Callable
+import ast
+import sys
+from typing import Dict, List, Any, Optional, Callable, Set
 from dataclasses import dataclass, field
 from openai import OpenAI
 import traceback
+from data_integrity_checker import DataIntegrityChecker, validate_dataframe_integrity
 
 
 @dataclass
@@ -19,6 +22,205 @@ class ToolResult:
     success: bool
     result: Any
     error: Optional[str] = None
+
+
+class SecureCodeExecutor:
+    """
+    安全的代码执行器
+    使用 AST 检查限制可执行的代码，防止安全风险
+    """
+    
+    # 允许使用的模块
+    ALLOWED_MODULES: Set[str] = {
+        'pandas', 'pd',
+        'numpy', 'np',
+        'math', 'statistics', 'random', 'datetime',
+        'json', 're', 'collections', 'itertools'
+    }
+    
+    # 禁止使用的内置函数
+    FORBIDDEN_BUILTINS: Set[str] = {
+        'eval', 'exec', 'compile', '__import__', 'open',
+        'input', 'raw_input', 'help', 'quit', 'exit',
+        'reload', 'breakpoint', 'getattr', 'setattr',
+        'delattr', 'globals', 'locals', 'vars', 'dir'
+    }
+    
+    # 禁止的 AST 节点类型
+    FORBIDDEN_AST_NODES: Set[type] = {
+        ast.Delete,      # 禁止删除操作
+        ast.With,        # 禁止上下文管理器
+        ast.Try,         # 禁止异常处理（简化）
+        ast.ExceptHandler,
+        ast.Raise,       # 禁止抛出异常
+        ast.Assert,      # 禁止断言
+        ast.ClassDef,    # 禁止定义类
+        # ast.FunctionDef, # 允许定义简单函数（AI分析时常用）
+        ast.AsyncFunctionDef,
+        # ast.Lambda,      # 允许lambda（数据分析中常用）
+        ast.Yield,       # 禁止生成器
+        ast.YieldFrom,
+    }
+    
+    # 允许导入的模块（白名单）
+    ALLOWED_IMPORTS: Set[str] = {
+        'pandas', 'pd', 'numpy', 'np', 'math', 'statistics', 
+        'datetime', 'json', 're', 'collections', 'itertools',
+        'matplotlib', 'matplotlib.pyplot', 'plt', 'seaborn', 'sns'
+    }
+    
+    def __init__(self, dfs: Dict[str, pd.DataFrame]):
+        self.dfs = dfs
+        self.df = list(dfs.values())[0] if dfs else pd.DataFrame()
+        self.execution_namespace = self._create_safe_namespace()
+    
+    def _create_safe_namespace(self) -> Dict[str, Any]:
+        """创建安全的执行环境"""
+        # 基础安全命名空间
+        safe_namespace = {
+            '__builtins__': {},
+        }
+        
+        # 添加允许的内置函数
+        allowed_builtins = {
+            'len', 'range', 'enumerate', 'zip', 'map', 'filter',
+            'sum', 'min', 'max', 'abs', 'round', 'sorted',
+            'str', 'int', 'float', 'bool', 'list', 'dict', 'tuple', 'set',
+            'type', 'isinstance', 'hasattr', 'print', '__import__'
+        }
+        
+        for name in allowed_builtins:
+            if name in __builtins__:
+                safe_namespace['__builtins__'][name] = __builtins__[name]
+        
+        # 添加允许的模块
+        safe_namespace['pd'] = pd
+        safe_namespace['np'] = np
+        safe_namespace['df'] = self.df
+        safe_namespace['dfs'] = self.dfs
+        
+        # 将所有DataFrame添加到命名空间（使用原始变量名）
+        for name, df in self.dfs.items():
+            safe_namespace[name] = df
+        
+        # 添加数学函数
+        import math
+        import statistics
+        safe_namespace['math'] = math
+        safe_namespace['statistics'] = statistics
+        
+        # 添加可视化库（如果已安装）
+        try:
+            import matplotlib
+            import matplotlib.pyplot as plt
+            safe_namespace['matplotlib'] = matplotlib
+            safe_namespace['plt'] = plt
+        except ImportError:
+            pass
+        
+        try:
+            import seaborn as sns
+            safe_namespace['seaborn'] = sns
+            safe_namespace['sns'] = sns
+        except ImportError:
+            pass
+        
+        return safe_namespace
+    
+    def validate_code(self, code: str) -> tuple[bool, str]:
+        """
+        验证代码是否安全
+        返回: (是否安全, 错误信息)
+        """
+        try:
+            tree = ast.parse(code)
+        except SyntaxError as e:
+            return False, f"语法错误: {e}"
+        
+        for node in ast.walk(tree):
+            # 检查禁止的 AST 节点
+            if type(node) in self.FORBIDDEN_AST_NODES:
+                return False, f"代码包含不允许的操作: {type(node).__name__}"
+            
+            # 检查 Import 语句
+            if isinstance(node, ast.Import):
+                for alias in node.names:
+                    if alias.name not in self.ALLOWED_IMPORTS:
+                        return False, f"禁止导入模块: {alias.name}"
+            
+            # 检查 ImportFrom 语句
+            if isinstance(node, ast.ImportFrom):
+                if node.module not in self.ALLOWED_IMPORTS:
+                    return False, f"禁止从模块导入: {node.module}"
+            
+            # 检查函数调用
+            if isinstance(node, ast.Call):
+                # 检查是否调用了禁止的内置函数
+                if isinstance(node.func, ast.Name):
+                    if node.func.id in self.FORBIDDEN_BUILTINS:
+                        return False, f"禁止使用函数: {node.func.id}"
+                
+                # 检查属性访问（如 os.system）
+                if isinstance(node.func, ast.Attribute):
+                    # 检查是否访问了禁止的模块
+                    if isinstance(node.func.value, ast.Name):
+                        # 允许 DataFrame 变量名（可能是 df、dfs 或其他 DataFrame 变量）
+                        # 只禁止已知的危险模块
+                        forbidden_modules = {'os', 'sys', 'subprocess', 'socket', 
+                                            'urllib', 'http', 'ftplib', 'smtplib',
+                                            'pickle', 'marshal', 'ctypes', 'io'}
+                        if node.func.value.id in forbidden_modules:
+                            return False, f"禁止访问模块: {node.func.value.id}.{node.func.attr}"
+            
+            # 检查名称引用
+            if isinstance(node, ast.Name):
+                if node.id in self.FORBIDDEN_BUILTINS:
+                    return False, f"禁止使用: {node.id}"
+        
+        return True, ""
+    
+    def execute(self, code: str) -> ToolResult:
+        """
+        安全地执行代码
+        """
+        # 首先验证代码
+        is_safe, error_msg = self.validate_code(code)
+        if not is_safe:
+            return ToolResult(success=False, result=None, error=f"代码安全检查失败: {error_msg}")
+        
+        try:
+            # 捕获输出
+            import io
+            stdout_capture = io.StringIO()
+            stderr_capture = io.StringIO()
+            
+            old_stdout = sys.stdout
+            old_stderr = sys.stderr
+            
+            sys.stdout = stdout_capture
+            sys.stderr = stderr_capture
+            
+            # 编译并执行代码
+            compiled_code = compile(code, '<string>', 'exec')
+            exec(compiled_code, self.execution_namespace)
+            
+            # 恢复输出
+            sys.stdout = old_stdout
+            sys.stderr = old_stderr
+            
+            output = stdout_capture.getvalue()
+            error = stderr_capture.getvalue()
+            
+            if error:
+                return ToolResult(success=False, result=output, error=error)
+            
+            return ToolResult(success=True, result=output)
+            
+        except Exception as e:
+            # 确保恢复输出
+            sys.stdout = old_stdout if 'old_stdout' in locals() else sys.stdout
+            sys.stderr = old_stderr if 'old_stderr' in locals() else sys.stderr
+            return ToolResult(success=False, result=None, error=str(e))
 
 
 @dataclass
@@ -54,13 +256,12 @@ class DataAnalysisTools:
         self.dfs = dfs
         self.primary_df = list(dfs.values())[0] if dfs else pd.DataFrame()
         self.df = self.primary_df
-        self.execution_namespace = {
-            'pd': pd,
-            'np': np,
-            'df': self.df,
-            'dfs': dfs,
-            'plt': None,
-        }
+        # 初始化安全代码执行器（保持单例，保留执行上下文）
+        self._secure_executor = SecureCodeExecutor(dfs)
+        # 初始化完整性检查器
+        self.integrity_checker = DataIntegrityChecker(dfs)
+        # 记录原始数据行数，用于完整性校验
+        self.original_row_counts = {name: len(df) for name, df in dfs.items()}
     
     def get_data_info(self) -> str:
         """获取数据基本信息"""
@@ -89,41 +290,12 @@ class DataAnalysisTools:
         return json.dumps(info, indent=2, default=str)
     
     def execute_python(self, code: str) -> ToolResult:
-        """执行 Python 代码"""
-        try:
-            # 捕获输出
-            import io
-            import sys
-            
-            stdout_capture = io.StringIO()
-            stderr_capture = io.StringIO()
-            
-            old_stdout = sys.stdout
-            old_stderr = sys.stderr
-            
-            sys.stdout = stdout_capture
-            sys.stderr = stderr_capture
-            
-            # 执行代码
-            exec(code, self.execution_namespace)
-            
-            # 恢复输出
-            sys.stdout = old_stdout
-            sys.stderr = old_stderr
-            
-            output = stdout_capture.getvalue()
-            error = stderr_capture.getvalue()
-            
-            if error:
-                return ToolResult(success=False, result=output, error=error)
-            
-            return ToolResult(success=True, result=output)
-            
-        except Exception as e:
-            return ToolResult(success=False, result=None, error=str(e))
+        """执行 Python 代码 - 使用安全沙箱"""
+        # 使用已有的 SecureCodeExecutor 实例，保留执行上下文
+        return self._secure_executor.execute(code)
     
     def query_data(self, query_description: str) -> ToolResult:
-        """根据描述查询数据"""
+        """根据描述查询数据 - 返回完整数据"""
         try:
             if len(self.dfs) > 1:
                 result = {
@@ -132,14 +304,14 @@ class DataAnalysisTools:
                 }
                 for name, df in self.dfs.items():
                     result['tables'][name] = {
-                        'head': df.head(10).to_dict(),
+                        'head': df.to_dict(),
                         'describe': df.describe().to_dict(),
                         'shape': df.shape
                     }
                 return ToolResult(success=True, result=json.dumps(result, indent=2, default=str))
             
             result = {
-                'head': self.df.head(10).to_dict(),
+                'head': self.df.to_dict(),
                 'describe': self.df.describe().to_dict(),
                 'info': f"数据形状: {self.df.shape}, 列: {list(self.df.columns)}"
             }
@@ -151,10 +323,16 @@ class DataAnalysisTools:
         """生成可视化图表"""
         try:
             import matplotlib.pyplot as plt
-            import seaborn as sns
             
             self.execution_namespace['plt'] = plt
-            self.execution_namespace['sns'] = sns
+            
+            # 尝试导入 seaborn，如果失败则使用 matplotlib 替代
+            try:
+                import seaborn as sns
+                self.execution_namespace['sns'] = sns
+                has_seaborn = True
+            except ImportError:
+                has_seaborn = False
             
             chart_type = viz_config.get('chart_type', 'bar')
             columns = viz_config.get('columns', [])
@@ -182,7 +360,14 @@ class DataAnalysisTools:
                     plt.ylabel(columns[1])
             elif chart_type == 'correlation':
                 numeric_df = df.select_dtypes(include=[np.number])
-                sns.heatmap(numeric_df.corr(), annot=True, cmap='coolwarm')
+                if has_seaborn:
+                    sns.heatmap(numeric_df.corr(), annot=True, cmap='coolwarm')
+                else:
+                    # 使用 matplotlib 绘制相关性热力图
+                    plt.imshow(numeric_df.corr(), cmap='coolwarm', aspect='auto')
+                    plt.colorbar()
+                    plt.xticks(range(len(numeric_df.columns)), numeric_df.columns, rotation=45)
+                    plt.yticks(range(len(numeric_df.columns)), numeric_df.columns)
             elif chart_type == 'multi_table_compare' and len(self.dfs) > 1:
                 fig, axes = plt.subplots(1, len(self.dfs), figsize=(15, 5))
                 if len(self.dfs) == 1:
@@ -385,20 +570,30 @@ class AgentAnalyzer:
 - 找出表之间的关联字段（如ID、日期、类别等）
 - 理解表之间的业务关系（主从关系、关联关系等）
 
-**第二步：表间关联分析**
+**第二步：全面业务指标分析（必须执行）**
+对每个数值型字段，必须分析以下指标：
+- **基础统计**: 总和(sum)、平均值(mean)、中位数(median)、标准差(std)
+- **极值分析**: 最大值(max)、最小值(min)、极差(range)
+- **分布分析**: 四分位数(25%, 75%)、百分位数分布
+- **占比分析**: 各分类维度下的占比、累计占比
+- **趋势分析**: 如有时间字段，分析时间趋势
+
+**第三步：多维度交叉分析（必须执行）**
+- **分类维度分析**: 对每个分类字段，按数值字段汇总排序
+- **相关性分析**: 数值字段之间的相关性矩阵
+- **分组对比**: 不同分组间的指标对比
+- **异常识别**: 识别异常值和异常模式
+
+**第四步：表间关联分析**
 - 使用 execute_python 进行跨表分析
 - 分析关联字段的数据匹配情况
 - 发现表之间的数据一致性/差异
 
-**第三步：综合业务分析**
-- 基于多表数据进行综合分析
-- 计算跨表的业务指标
-- 发现跨表的业务模式和异常
-
-**第四步：生成综合业务报告**
+**第五步：生成综合业务报告**
 - 用业务语言描述发现，避免技术术语
 - 突出表间关联的重要发现
 - 提供3-5个核心洞察和具体业务建议
+- **必须包含**: 所有分析维度的完整数据表格
 
 ## 工具使用指南
 
@@ -413,13 +608,38 @@ class AgentAnalyzer:
 - `dfs` 字典访问多表数据，如 `dfs['表名1']`, `dfs['表名2']`
 - `df` 访问第一张表的数据
 
-## 数据完整性要求
+## 数据完整性要求（强制执行）
 
-⚠️ **重要：必须显示完整数据**
-- 使用 `print(df.to_string())` 显示完整数据，不要使用 `head()` 截断
-- 对于分组统计，确保显示所有分组结果
-- 对于汇总分析，列出所有类别/分组的完整数据
-- 不要遗漏任何数据行，确保分析完整性
+⚠️ **警告：必须显示完整数据，严禁截断！**
+
+### 显示完整数据的正确方法：
+```python
+# ✅ 正确：显示完整数据
+print(df.to_string())
+print(df.to_dict())
+print(df.to_json())
+
+# ❌ 错误：截断数据（严禁使用）
+print(df.head())  # 禁止！
+print(df.head(10))  # 禁止！
+print(df[:10])  # 禁止！
+```
+
+### 分组统计必须显示所有分组：
+```python
+# ✅ 正确：显示所有分组
+print(df.groupby('字段').sum().to_string())
+print(df.groupby('字段').agg(['sum', 'mean']).to_string())
+
+# ❌ 错误：截断分组结果（严禁使用）
+print(df.groupby('字段').sum().head())  # 禁止！
+```
+
+### 数据完整性检查清单：
+- [ ] 使用 `len(df)` 确认总行数
+- [ ] 使用 `df.to_string()` 显示完整数据
+- [ ] 分组统计后检查分组数量是否完整
+- [ ] 确认没有使用任何 `head()` 方法
 
 ## 数据清洗要求
 
@@ -429,19 +649,79 @@ class AgentAnalyzer:
 - 示例代码：`valid_data = df[col].dropna()[df[col].dropna() != 0]`
 - 所有统计计算都基于过滤后的有效数据
 
+## Pandas 代码规范（重要！）
+
+⚠️ **避免常见 Pandas 错误：**
+
+### 1. groupby 操作
+```python
+# ✅ 正确：显式设置 observed=False 避免警告
+result = df.groupby('分类列', observed=False)['数值列'].sum()
+
+# ✅ 正确：对分类列进行分组时，确保数值列是数值类型
+result = df.groupby('分类列', observed=False)['数值列'].agg(['sum', 'mean'])
+```
+
+### 2. pd.cut 分箱操作
+```python
+# ✅ 正确：cut 函数只接受 bins 参数，不接受 observed 参数
+bins = pd.cut(df['数值列'], bins=5)
+
+# ❌ 错误：cut 函数不支持 observed 参数
+bins = pd.cut(df['数值列'], bins=5, observed=False)  # 会报错！
+```
+
+### 3. 数据类型检查
+```python
+# ✅ 正确：确保数值操作前检查数据类型
+if pd.api.types.is_numeric_dtype(df['列名']):
+    result = df['列名'].sum()
+else:
+    # 尝试转换为数值类型
+    result = pd.to_numeric(df['列名'], errors='coerce').sum()
+```
+
+### 4. 避免除零错误
+```python
+# ✅ 正确：除法操作前检查分母是否为零
+total = df['列名'].sum()
+if total != 0:
+    ratio = value / total
+else:
+    ratio = 0  # 或者 None
+
+# ✅ 正确：计算占比时处理空值和零值
+valid_data = df['列名'].dropna()
+if len(valid_data) > 0 and valid_data.sum() != 0:
+    percentage = (value / valid_data.sum()) * 100
+else:
+    percentage = 0
+```
+
+### 5. 处理缺失模块
+```python
+# ✅ 正确：导入可选模块时处理 ImportError
+try:
+    import seaborn as sns
+    # 使用 seaborn
+except ImportError:
+    # 使用 matplotlib 替代
+    pass
+```
+
 ## 重要提醒
 
-❌ 不要做的：
-- 只分析单张表而忽略表间关系
-- 只报告"数据有XX行XX列"这类无意义信息
-- 使用复杂的技术术语
+❌ **严禁（会导致数据不完整）**：
 - 使用 `head()` 截断数据显示
+- 使用 `tail()` 截断数据显示
+- 使用切片 `[:n]` 截断数据
+- 只显示部分分组结果
 
-✅ 应该做的：
-- 重点分析表与表之间的关联和差异
-- 解释跨表分析发现的业务含义
-- 给出基于综合分析的業務建议
-- 确保显示完整数据，不遗漏任何记录
+✅ **必须（确保数据完整性）**：
+- 使用 `to_string()` 显示完整数据
+- 显示所有分组、所有类别的完整数据
+- 使用 `len()` 验证数据行数
+- 确保分析结果包含全部记录
 
 请开始多表关联业务分析。
 """
@@ -472,11 +752,24 @@ class AgentAnalyzer:
 - 识别关键业务指标（KPIs）
 - 理解字段间的业务关系
 
-**第二步：多维度业务分析**
-- 数据分布：哪些情况最常见？什么很少见？
-- 关键指标：核心业务的度量是什么？
-- 关联分析：不同维度如何相互影响？
-- 异常识别：哪些数据点值得关注？为什么？
+**第二步：全面业务指标分析（必须执行）**
+对每个数值型字段，必须分析以下指标并生成完整表格：
+- **基础统计**: 总和(sum)、平均值(mean)、中位数(median)、标准差(std)、方差(var)
+- **极值分析**: 最大值(max)、最小值(min)、极差(max-min)
+- **分布分析**: 四分位数(25%, 75%)、百分位数(10%, 90%)
+- **数据质量**: 非空值数量、空值数量、唯一值数量
+
+**第三步：多维度交叉分析（必须执行）**
+- **分类维度分析**: 对每个分类字段，按所有数值字段进行分组汇总（sum, mean, count）
+- **相关性分析**: 所有数值字段之间的相关性矩阵
+- **排序分析**: 各维度下的Top 10和Bottom 10
+- **占比分析**: 各分类的占比和累计占比
+- **异常识别**: 识别超出3倍标准差的异常值
+
+**第四步：深度业务洞察**
+- 数据反映了什么业务现状？
+- 存在什么业务机会或问题？
+- 不同维度对比揭示了什么？
 
 **第三步：业务洞察提取**
 - 数据反映了什么业务现状？
@@ -510,6 +803,66 @@ class AgentAnalyzer:
 - 文本型数据：过滤空字符串 `''` 和 `'0'`
 - 示例代码：`valid_data = df[col].dropna()[df[col].dropna() != 0]`
 - 所有统计计算都基于过滤后的有效数据
+
+## Pandas 代码规范（重要！）
+
+⚠️ **避免常见 Pandas 错误：**
+
+### 1. groupby 操作
+```python
+# ✅ 正确：显式设置 observed=False 避免警告
+result = df.groupby('分类列', observed=False)['数值列'].sum()
+
+# ✅ 正确：对分类列进行分组时，确保数值列是数值类型
+result = df.groupby('分类列', observed=False)['数值列'].agg(['sum', 'mean'])
+```
+
+### 2. pd.cut 分箱操作
+```python
+# ✅ 正确：cut 函数只接受 bins 参数，不接受 observed 参数
+bins = pd.cut(df['数值列'], bins=5)
+
+# ❌ 错误：cut 函数不支持 observed 参数
+bins = pd.cut(df['数值列'], bins=5, observed=False)  # 会报错！
+```
+
+### 3. 数据类型检查
+```python
+# ✅ 正确：确保数值操作前检查数据类型
+if pd.api.types.is_numeric_dtype(df['列名']):
+    result = df['列名'].sum()
+else:
+    # 尝试转换为数值类型
+    result = pd.to_numeric(df['列名'], errors='coerce').sum()
+```
+
+### 4. 避免除零错误
+```python
+# ✅ 正确：除法操作前检查分母是否为零
+total = df['列名'].sum()
+if total != 0:
+    ratio = value / total
+else:
+    ratio = 0  # 或者 None
+
+# ✅ 正确：计算占比时处理空值和零值
+valid_data = df['列名'].dropna()
+if len(valid_data) > 0 and valid_data.sum() != 0:
+    percentage = (value / valid_data.sum()) * 100
+else:
+    percentage = 0
+```
+
+### 5. 处理缺失模块
+```python
+# ✅ 正确：导入可选模块时处理 ImportError
+try:
+    import seaborn as sns
+    # 使用 seaborn
+except ImportError:
+    # 使用 matplotlib 替代
+    pass
+```
 
 ## 重要提醒
 

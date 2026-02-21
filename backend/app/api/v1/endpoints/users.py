@@ -59,3 +59,35 @@ def unban_user(
     """
     response = db.table("user_profiles").update({"status": "active"}).eq("id", user_id).execute()
     return {"message": "User unbanned successfully", "user_id": user_id}
+
+
+@router.put("/{user_id}/role", response_model=Any)
+def update_user_role(
+    user_id: str,
+    role_data: dict,
+    db: Client = Depends(deps.get_db),
+    current_user: Any = Depends(deps.get_current_admin),
+):
+    """
+    Update a user's role.
+    """
+    from datetime import datetime
+    
+    new_role = role_data.get("role")
+    if not new_role:
+        raise HTTPException(status_code=400, detail="Role is required")
+    
+    # Validate role value
+    allowed_roles = ["user", "admin", "super_admin"]
+    if new_role not in allowed_roles:
+        raise HTTPException(status_code=400, detail=f"Invalid role. Allowed roles: {allowed_roles}")
+    
+    response = db.table("user_profiles").update({
+        "role": new_role,
+        "updated_at": datetime.now().isoformat()
+    }).eq("id", user_id).execute()
+    
+    if not response.data:
+        raise HTTPException(status_code=404, detail="User not found or update failed")
+    
+    return {"message": "User role updated successfully", "user_id": user_id, "new_role": new_role}

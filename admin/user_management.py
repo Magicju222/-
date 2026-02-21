@@ -203,7 +203,7 @@ def show_registration_trend(df: pd.DataFrame):
     df['date'] = df['created_at'].dt.date
     last_30_days = datetime.now().date() - timedelta(days=30)
     
-    daily_registrations = df[df['date'] >= last_30_days].groupby('date').size().reset_index(name='count')
+    daily_registrations = df[df['date'] >= last_30_days].groupby('date', observed=False).size().reset_index(name='count')
     
     if len(daily_registrations) > 0:
         # Fill missing dates
@@ -346,32 +346,20 @@ def show_role_editor(api, user_id: str, user_info):
             st.info("请选择不同的角色")
 
 def update_user_role(api, user_id: str, new_role: str) -> bool:
-    """Update user role via API"""
+    """Update user role via backend API"""
     try:
-        # This would call the backend API to update role
-        # For now, we'll use a direct Supabase update
-        import os
-        from supabase import create_client
+        # 使用后端 API 更新用户角色，而不是直接使用 Service Role Key
+        response = requests.put(
+            f"{api.api_url}/users/{user_id}/role",
+            headers=api._get_headers(),
+            json={"role": new_role}
+        )
         
-        url = os.environ.get("SUPABASE_URL")
-        key = os.environ.get("SUPABASE_SERVICE_KEY")
-        
-        if not url or not key:
-            st.error("缺少 Supabase 配置")
-            return False
-        
-        supabase = create_client(url, key)
-        
-        # Update user profile role
-        response = supabase.table("user_profiles").update({
-            "role": new_role,
-            "updated_at": datetime.now().isoformat()
-        }).eq("id", user_id).execute()
-        
-        if response.data:
+        if response.status_code == 200:
             return True
         else:
-            st.error("更新角色失败")
+            error_detail = response.json().get("detail", "更新角色失败")
+            st.error(f"更新角色失败: {error_detail}")
             return False
             
     except Exception as e:

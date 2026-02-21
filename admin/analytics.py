@@ -290,7 +290,7 @@ def show_user_analysis(df_users: pd.DataFrame, date_from: datetime.date, date_to
     st.markdown("**用户注册趋势**")
     if 'created_at' in df_users.columns:
         df_users['date'] = df_users['created_at'].dt.date
-        daily_registrations = df_users.groupby('date').size()
+        daily_registrations = df_users.groupby('date', observed=False).size()
 
         if len(daily_registrations) > 1:
             st.line_chart(daily_registrations)
@@ -323,7 +323,7 @@ def show_task_analysis(df_logs: pd.DataFrame, date_from: datetime.date, date_to:
     st.markdown("**任务趋势**")
     if 'created_at' in df_logs.columns:
         df_logs['date'] = df_logs['created_at'].dt.date
-        daily_tasks = df_logs.groupby('date').size()
+        daily_tasks = df_logs.groupby('date', observed=False).size()
 
         if len(daily_tasks) > 1:
             st.line_chart(daily_tasks)
@@ -354,7 +354,7 @@ def show_task_analysis(df_logs: pd.DataFrame, date_from: datetime.date, date_to:
     st.markdown("**时段分布（按小时）**")
     if 'created_at' in df_logs.columns:
         df_logs['hour'] = df_logs['created_at'].dt.hour
-        hourly_tasks = df_logs.groupby('hour').size()
+        hourly_tasks = df_logs.groupby('hour', observed=False).size()
         st.bar_chart(hourly_tasks)
 
     # Top users by task count

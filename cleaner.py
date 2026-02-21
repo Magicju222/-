@@ -6,11 +6,16 @@ import io
 import zipfile
 import numpy as np
 import datetime
+import os
 
 class ExcelCleaner:
     def __init__(self, api_key=None):
         # API Key is no longer needed but kept for signature compatibility
         self.api_key = api_key
+        # 大文件阈值（50MB）
+        self.large_file_threshold = 50 * 1024 * 1024
+        # CSV分块大小
+        self.csv_chunksize = 100000
 
     def get_sheet_names(self, file_content):
         """
@@ -18,10 +23,12 @@ class ExcelCleaner:
         """
         try:
             file_content.seek(0)
-            if file_content.name.endswith('.csv'):
+            file_name = getattr(file_content, 'name', '')
+            
+            if file_name.endswith('.csv'):
                 return ['Sheet1']
             
-            if file_content.name.endswith('.xls'):
+            if file_name.endswith('.xls'):
                 excel_file = pd.ExcelFile(file_content, engine='xlrd')
                 return excel_file.sheet_names
             
@@ -42,12 +49,32 @@ class ExcelCleaner:
             # Ensure pointer is at start
             file_content.seek(0)
             
-            # Check file type
-            if file_content.name.endswith('.csv'):
-                df = pd.read_csv(file_content, header=None)
+            # Check file type - handle both file objects and BytesIO
+            file_name = getattr(file_content, 'name', '')
+            
+            if file_name.endswith('.csv'):
+                # 检查文件大小，大文件使用分块读取
+                file_content.seek(0, os.SEEK_END)
+                file_size = file_content.tell()
+                file_content.seek(0)
+                
+                if file_size > self.large_file_threshold:
+                    # 大文件分块读取
+                    chunks = []
+                    for chunk in pd.read_csv(file_content, header=None, chunksize=self.csv_chunksize):
+                        chunks.append(chunk)
+                        # 限制内存使用，只保留前100万行
+                        if sum(len(c) for c in chunks) >= 1000000:
+                            break
+                    df = pd.concat(chunks, ignore_index=True)
+                    # 如果数据被截断，添加提示
+                    if len(df) >= 1000000:
+                        print("警告：CSV文件过大，只加载了前100万行数据")
+                else:
+                    df = pd.read_csv(file_content, header=None)
                 return df
                 
-            if file_content.name.endswith('.xls'):
+            if file_name.endswith('.xls'):
                 # Legacy Excel format
                 # xlrd engine is needed.
                 # Note: We cannot easily "unmerge and fill" without openpyxl support.
@@ -228,9 +255,19 @@ class ExcelCleaner:
                 
         return df
 
-    def clean_data(self, file_content, header_rows, data_start_row, key_columns=None, separator="_", sheet_name=None):
+    def clean_data(self, file_content, header_rows, data_start_row, key_columns=None, separator="_", sheet_name=None, data_end_row=None, data_end_col=None):
         """
         Main execution pipeline. Strictly uses provided manual structure.
+        
+        Args:
+            file_content: 文件内容
+            header_rows: 表头行索引列表（0-based）
+            data_start_row: 数据开始行索引（0-based）
+            key_columns: 关键列索引列表（0-based），用于向下填充
+            separator: 多级表头分隔符
+            sheet_name: 工作表名称
+            data_end_row: 数据结束行索引（0-based），可选，None表示到最后一行
+            data_end_col: 数据结束列索引（0-based），可选，None表示到最后一列
         """
         # 1. Load and fill merged cells
         raw_df = self.load_and_fill_merged_cells(file_content, sheet_name=sheet_name)
@@ -238,9 +275,19 @@ class ExcelCleaner:
         # 2. Process Headers
         new_columns = self.process_headers(raw_df, header_rows, separator=separator)
         
-        # 3. Extract Data
-        # Slice from data_start_row
-        cleaned_df = raw_df.iloc[data_start_row:].copy()
+        # 3. Extract Data with range constraints
+        # Slice from data_start_row to data_end_row (if specified)
+        if data_end_row is not None:
+            cleaned_df = raw_df.iloc[data_start_row:data_end_row+1].copy()
+        else:
+            cleaned_df = raw_df.iloc[data_start_row:].copy()
+        
+        # Apply column range constraint (if specified)
+        if data_end_col is not None:
+            # Slice columns from 0 to data_end_col (inclusive)
+            cleaned_df = cleaned_df.iloc[:, :data_end_col+1].copy()
+            # Also truncate new_columns to match
+            new_columns = new_columns[:data_end_col+1]
         
         # Handle columns mismatch (rare but possible if header processing is weird)
         if len(new_columns) == cleaned_df.shape[1]:
@@ -265,6 +312,8 @@ class ExcelCleaner:
             "cleaned_df": cleaned_df,
             "structure_info": {
                 "header_rows": header_rows,
-                "data_start_row": data_start_row
+                "data_start_row": data_start_row,
+                "data_end_row": data_end_row,
+                "data_end_col": data_end_col
             }
         }

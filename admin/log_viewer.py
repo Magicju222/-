@@ -157,7 +157,7 @@ def show_cleaning_trend(df: pd.DataFrame):
     df['date'] = df['created_at'].dt.date
     last_30_days = datetime.now().date() - timedelta(days=30)
 
-    daily_tasks = df[df['date'] >= last_30_days].groupby('date').size().reset_index(name='count')
+    daily_tasks = df[df['date'] >= last_30_days].groupby('date', observed=False).size().reset_index(name='count')
 
     if len(daily_tasks) > 0:
         # Fill missing dates
@@ -245,7 +245,7 @@ def show_statistics(df_logs: pd.DataFrame, df_users: pd.DataFrame):
     # Status distribution over time
     if 'status' in df_logs.columns and 'date' in df_logs.columns:
         st.markdown("📊 每日状态分布")
-        status_by_date = df_logs.groupby(['date', 'status']).size().unstack(fill_value=0)
+        status_by_date = df_logs.groupby(['date', 'status'], observed=False).size().unstack(fill_value=0)
         st.bar_chart(status_by_date)
 
 

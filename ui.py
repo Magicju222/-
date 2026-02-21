@@ -202,14 +202,13 @@ def render_sidebar(api_key_val=None, suggested_structure=None):
         
         return api_key, settings
 
-@st.fragment
 def render_interactive_structure_selector(df, key_prefix="default"):
     """
     Renders an interactive dataframe selector for defining structure.
-    Returns: header_rows (list), data_start_row (int)
+    New interaction mode: Four separate selection modes (Header Rows, Data Start, Data End, Column End)
+    Returns: header_rows (list), data_start_row (int), key_columns (list), data_end_row (int or None), data_end_col (int or None)
     """
     st.markdown(f"### {t('structure_definition')}")
-    st.info(t("structure_instruction"))
     
     col_controls, col_preview = st.columns([1, 2])
     
@@ -217,6 +216,9 @@ def render_interactive_structure_selector(df, key_prefix="default"):
     header_key = f"{key_prefix}_header_rows"
     data_row_key = f"{key_prefix}_data_start_row"
     key_cols_key = f"{key_prefix}_key_columns"
+    data_end_row_key = f"{key_prefix}_data_end_row"
+    data_end_col_key = f"{key_prefix}_data_end_col"
+    select_mode_key = f"{key_prefix}_select_mode"
     
     # Ensure state exists
     if header_key not in st.session_state:
@@ -225,109 +227,278 @@ def render_interactive_structure_selector(df, key_prefix="default"):
         st.session_state[data_row_key] = 2 # Default to row 2 as data start
     if key_cols_key not in st.session_state:
         st.session_state[key_cols_key] = []
-        
+    if data_end_row_key not in st.session_state:
+        st.session_state[data_end_row_key] = None # Default to None (no limit)
+    if data_end_col_key not in st.session_state:
+        st.session_state[data_end_col_key] = None # Default to None (no limit)
+    if select_mode_key not in st.session_state:
+        st.session_state[select_mode_key] = "header" # Default mode: select header rows
+    
+    # Get current selection mode
+    current_mode = st.session_state[select_mode_key]
+    
     # --- PRE-PROCESS SELECTION ---
-    # To avoid StreamlitAPIException, we process the widget's selection state 
-    # BEFORE rendering the widgets that depend on it.
-    widget_key = f"{key_prefix}_structure_selector_widget"
+    # Check all possible widget keys based on current mode
+    widget_keys = {
+        "header": f"{key_prefix}_selector_header",
+        "data_start": f"{key_prefix}_selector_row",
+        "data_end": f"{key_prefix}_selector_row",
+        "col_end": f"{key_prefix}_selector_col_end",
+        "key_cols": f"{key_prefix}_selector_key_cols",
+    }
+    
+    widget_key = widget_keys.get(current_mode, f"{key_prefix}_selector_default")
+    
     if widget_key in st.session_state:
         selection = st.session_state[widget_key]
+        # Debug: show selection structure (using st.write instead of st.sidebar)
         if selection and "selection" in selection:
-            # 1. Handle Row Selection -> Update Headers and Data Start
-            if "rows" in selection.selection:
+            
+            # Handle based on current mode
+            if current_mode == "header" and "rows" in selection.selection:
+                # Header mode: multi-row selection
                 selected_indices_0_based = selection.selection.rows
                 selected_rows_1_based = [i + 1 for i in selected_indices_0_based]
-                
-                if selected_rows_1_based and set(selected_rows_1_based) != set(st.session_state[header_key]):
-                    st.session_state[header_key] = selected_rows_1_based
-                    # Auto-infer data start row
+                if selected_rows_1_based:
+                    st.session_state[header_key] = sorted(selected_rows_1_based)
+                    # Auto-update data start row
                     st.session_state[data_row_key] = max(selected_rows_1_based) + 1
+                    
+            elif current_mode == "data_start" and "rows" in selection.selection:
+                # Data start mode: single row selection
+                selected_indices = selection.selection.rows
+                if selected_indices:
+                    # Take the first selected row as data start
+                    st.session_state[data_row_key] = selected_indices[0] + 1
+                    
+            elif current_mode == "data_end" and "rows" in selection.selection:
+                # Data end mode: single row selection
+                selected_indices = selection.selection.rows
+                if selected_indices:
+                    # Take the first selected row as data end
+                    st.session_state[data_end_row_key] = selected_indices[0] + 1
+                    
+            elif current_mode == "col_end":
+                # Column end mode: single column selection
+                # Streamlit returns column names (which we set as '1', '2', '3', etc.)
+                selected_col_names = selection.selection.get('columns', [])
 
-            # 2. Handle Column Selection -> Update Key Columns
-            if "columns" in selection.selection:
-                 selected_cols = selection.selection.columns
-                 key_columns_indices = []
-                 for col in selected_cols:
-                     if col in df.columns:
-                         idx = df.columns.get_loc(col)
-                         if isinstance(idx, int):
-                             key_columns_indices.append(idx)
-                         continue
-                     if isinstance(col, str) and col.isdigit():
-                         try:
-                             col_int = int(col)
-                             if col_int in df.columns:
-                                 idx = df.columns.get_loc(col_int)
-                                 if isinstance(idx, int):
-                                     key_columns_indices.append(idx)
-                         except: pass
-                 
-                 if set(key_columns_indices) != set(st.session_state[key_cols_key]):
-                     st.session_state[key_cols_key] = key_columns_indices
+                if selected_col_names:
+                    # The column name is already the 1-based index (e.g., '3' means column 3)
+                    try:
+                        col_idx = int(selected_col_names[0])  # Already 1-based
+                        st.session_state[data_end_col_key] = col_idx
+                    except:
+                        pass
+                    
+            elif current_mode == "key_cols":
+                # Key columns mode: multi-column selection
+                # Streamlit returns column names (which we set as '1', '2', '3', etc.)
+                selected_col_names = selection.selection.get('columns', [])
+
+                if selected_col_names:
+                    key_columns_indices = []
+                    for col_name in selected_col_names:
+                        try:
+                            # Convert 1-based display name to 0-based index
+                            idx = int(col_name) - 1
+                            key_columns_indices.append(idx)
+                        except:
+                            pass
+                    if key_columns_indices:
+                        st.session_state[key_cols_key] = key_columns_indices
     
     with col_controls:
+        st.markdown(f"**{t('select_mode_title')}**")
+        
+        # Simple box-style buttons - vertically stacked, same size
+        buttons_config = [
+            ("header", t("btn_header_rows"), t("btn_header_rows_desc")),
+            ("data_start", t("btn_data_start"), t("btn_data_start_desc")),
+            ("data_end", t("btn_data_end"), t("btn_data_end_desc")),
+            ("col_end", t("btn_col_end"), t("btn_col_end_desc")),
+            ("key_cols", t("btn_key_cols"), t("btn_key_cols_desc")),
+        ]
+        
+        for mode, label, desc in buttons_config:
+            is_active = current_mode == mode
+            
+            # Create a container for each button row
+            btn_container = st.container()
+            with btn_container:
+                # Use columns to create a box-like layout
+                c1, c2 = st.columns([1, 3])
+                
+                with c1:
+                    # Simple checkbox-style indicator
+                    if is_active:
+                        st.markdown("☑️")
+                    else:
+                        st.markdown("⬜")
+                
+                with c2:
+                    # Simple button
+                    btn_label = f"**{label}**" if is_active else label
+                    if st.button(
+                        btn_label,
+                        use_container_width=True,
+                        key=f"{key_prefix}_btn_{mode}"
+                    ):
+                        st.session_state[select_mode_key] = mode
+                        st.rerun()
+            
+            # Description below
+            st.caption(f"  {desc}")
+            st.markdown("")  # Small spacing
+        
+        # Show current mode info
+        st.markdown("---")
+        mode_texts = {
+            "header": t("mode_header"),
+            "data_start": t("mode_data_start"),
+            "data_end": t("mode_data_end"),
+            "col_end": t("mode_col_end"),
+            "key_cols": t("mode_key_cols")
+        }
+        st.info(f"**{t('current_mode')}:** {mode_texts.get(current_mode, '')}")
+        
+        # Display current selections
+        st.markdown("---")
         st.markdown(f"**{t('structure_settings')}**")
+        st.write(f"📌 {t('selected_headers')}: {sorted(st.session_state[header_key])}")
+        st.write(f"📌 {t('data_row_input')}: {st.session_state[data_row_key]}")
         
-        # Display selected header rows (Read-only view of selection)
-        st.write(f"{t('selected_headers')}: {sorted(st.session_state[header_key])}")
+        data_end_display = st.session_state[data_end_row_key] if st.session_state[data_end_row_key] else "未设置"
+        col_end_display = st.session_state[data_end_col_key] if st.session_state[data_end_col_key] else "未设置"
+        # Convert 0-based key column indices to 1-based for display
+        if st.session_state[key_cols_key]:
+            key_cols_display = [i + 1 for i in st.session_state[key_cols_key]]
+        else:
+            key_cols_display = "未设置"
+        st.write(f"📌 {t('data_end_row_input')}: {data_end_display}")
+        st.write(f"📌 {t('data_end_col_input')}: {col_end_display}")
+        st.write(f"📌 {t('selected_key_columns')}: {key_cols_display}")
         
-        # Manual override for data start row
-        # Directly use the state key for automatic sync without st.rerun()
-        st.number_input(
-            t("data_row_input"),
-            min_value=1,
-            key=data_row_key
-        )
+        # Manual input for data end row (when table is too large)
+        if current_mode == "data_end":
+            st.markdown("---")
+            st.caption(t("manual_input"))
+            manual_end_row = st.number_input(
+                t("manual_end_row"),
+                min_value=0,
+                value=st.session_state[data_end_row_key] if st.session_state[data_end_row_key] else 0,
+                key=f"{key_prefix}_manual_end_row"
+            )
+            if manual_end_row > 0:
+                st.session_state[data_end_row_key] = manual_end_row
+        
+        # Manual input for data end column
+        if current_mode == "col_end":
+            st.markdown("---")
+            st.caption(t("manual_input"))
+            manual_end_col = st.number_input(
+                t("manual_end_col"),
+                min_value=0,
+                value=st.session_state[data_end_col_key] if st.session_state[data_end_col_key] else 0,
+                key=f"{key_prefix}_manual_end_col"
+            )
+            if manual_end_col > 0:
+                st.session_state[data_end_col_key] = manual_end_col
+        
+        # Clear buttons
+        st.markdown("---")
+        if st.button(t("clear_selection"), use_container_width=True, key=f"{key_prefix}_clear_btn"):
+            st.session_state[header_key] = [1]
+            st.session_state[data_row_key] = 2
+            st.session_state[data_end_row_key] = None
+            st.session_state[data_end_col_key] = None
+            st.session_state[key_cols_key] = []
+            st.rerun()
             
     with col_preview:
-        # Optimization: Limit preview rows for the interactive selector to 50
-        # This drastically reduces the browser's rendering load for styled tables
-        display_df = df.head(50).copy()
-        display_df.index = display_df.index + 1
+        # Show full dataframe without row limit for scrolling
+        display_df = df.copy()
+        display_df.index = display_df.index + 1  # Row index 1-based
+        # Rename columns to 1-based indices for display
+        display_df.columns = [str(i + 1) for i in range(len(df.columns))]
         
-        # EXTREME OPTIMIZATION: Matrix-based styling (axis=None)
+        # Dynamic styling based on current mode and selections
         def get_grid_styles(data):
             rows, cols = data.shape
             style_matrix = np.full((rows, cols), '', dtype=object)
             
             headers = set(st.session_state[header_key])
-            data_row = st.session_state[data_row_key]
+            data_start = st.session_state[data_row_key]
+            data_end = st.session_state[data_end_row_key]
+            col_end = st.session_state[data_end_col_key]
             
             for i in range(rows):
-                idx = i + 1 
+                idx = i + 1  # 1-based row index
+                
+                # Header rows - always yellow
                 if idx in headers:
-                    style_matrix[i, :] = 'background-color: #fff3cd'
-                elif idx == data_row:
-                    style_matrix[i, :] = 'background-color: #d4edda'
-                elif idx < data_row:
-                    style_matrix[i, :] = 'background-color: #f8d7da; opacity: 0.5'
+                    style_matrix[i, :] = 'background-color: #fff3cd; color: #856404; font-weight: bold'
+                # Data start row - green
+                elif idx == data_start:
+                    style_matrix[i, :] = 'background-color: #d4edda; color: #155724; font-weight: bold'
+                # Data end row - blue
+                elif data_end and idx == data_end:
+                    style_matrix[i, :] = 'background-color: #cce5ff; color: #004085; font-weight: bold'
+                # Rows between data start and end - light green
+                elif data_end and data_start < idx < data_end:
+                    style_matrix[i, :] = 'background-color: #f0f9f4'
+                # Rows before data start (noise) - light red
+                elif idx < data_start:
+                    style_matrix[i, :] = 'background-color: #f8d7da; opacity: 0.6'
+            
+            # Column end highlighting
+            if col_end:
+                for j in range(cols):
+                    col_idx = j + 1  # 1-based column index
+                    if col_idx == col_end:
+                        style_matrix[:, j] += '; border-right: 3px solid #004085'
+                    elif col_idx > col_end:
+                        style_matrix[:, j] += '; opacity: 0.3'
             
             return style_matrix
 
         styled_df = display_df.style.apply(get_grid_styles, axis=None)
         
-        # Interactive Dataframe
+        # Interactive Dataframe with dynamic selection mode
+        # Use different widget keys for different modes to avoid selection conflicts
+        if current_mode in ["header"]:
+            selection_mode = ["multi-row"]
+            widget_key = f"{key_prefix}_selector_header"
+        elif current_mode in ["data_start", "data_end"]:
+            selection_mode = ["single-row"]
+            widget_key = f"{key_prefix}_selector_row"
+        elif current_mode == "col_end":
+            selection_mode = ["single-column"]
+            widget_key = f"{key_prefix}_selector_col_end"
+        elif current_mode == "key_cols":
+            selection_mode = ["multi-column"]
+            widget_key = f"{key_prefix}_selector_key_cols"
+        else:
+            selection_mode = ["multi-row"]
+            widget_key = f"{key_prefix}_selector_default"
+        
         selection = st.dataframe(
             styled_df,
             on_select="rerun",
-            selection_mode=["multi-row", "multi-column"],
+            selection_mode=selection_mode,
             use_container_width=True,
             height=600,
-            key=f"{key_prefix}_structure_selector_widget"
+            key=widget_key
         )
-    
-    with col_controls:
-        st.markdown("---")
-        st.markdown(f"**{t('key_columns_settings')}**")
-        st.info(t("key_columns_help"))
-        st.write(f"{t('selected_key_columns')}: {st.session_state[key_cols_key]}")
 
-    # Return values from state
+    # Return values from state (convert 1-based to 0-based for internal processing)
     internal_header_rows = [r - 1 for r in st.session_state[header_key]]
     internal_data_start_row = st.session_state[data_row_key] - 1
     internal_key_columns = st.session_state[key_cols_key]
+    internal_data_end_row = st.session_state[data_end_row_key] - 1 if st.session_state[data_end_row_key] is not None else None
+    internal_data_end_col = st.session_state[data_end_col_key] - 1 if st.session_state[data_end_col_key] is not None else None
     
-    return internal_header_rows, internal_data_start_row, internal_key_columns
+    return internal_header_rows, internal_data_start_row, internal_key_columns, internal_data_end_row, internal_data_end_col
 
 def highlight_header_rows(df, header_rows):
     """Highlights the detected header rows in yellow."""

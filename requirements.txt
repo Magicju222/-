@@ -1,15 +1,31 @@
-streamlit
-pandas
-openpyxl
-xlsxwriter
-xlrd
-supabase
-python-dotenv
-requests
-openai>=1.0.0
-python-docx>=0.8.11
-python-pptx>=0.6.21
-matplotlib>=3.5.0
-plotly>=5.0.0
-Pillow>=9.0.0
-numpy>=1.21.0
+# AI Excel Cleaner 依赖包
+# 所有包版本已锁定，确保环境一致性
+
+# Web框架
+streamlit==1.28.0
+
+# 数据处理
+pandas==2.0.3
+numpy==1.24.3
+openpyxl==3.1.2
+xlsxwriter==3.1.9
+xlrd==2.0.1
+
+# 数据库和API
+supabase==1.2.0
+requests==2.31.0
+
+# AI/ML
+openai==1.3.0
+
+# 文档生成
+python-docx==0.8.11
+python-pptx==0.6.21
+
+# 可视化
+matplotlib==3.7.2
+plotly==5.15.0
+Pillow==10.0.0
+
+# 工具
+python-dotenv==1.0.0
