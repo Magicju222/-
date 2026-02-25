@@ -106,7 +106,9 @@ def handle_file_upload():
 # Auto-login for testing
 if 'user' not in st.session_state:
     from types import SimpleNamespace
-    st.session_state.user = SimpleNamespace(email='test@example.com', id='test-user-id')
+    import uuid
+    # 生成有效的 UUID 格式的用户 ID
+    st.session_state.user = SimpleNamespace(email='test@example.com', id=str(uuid.uuid4()))
 
 # Initialize Services and Config
 supabase = auth.init_supabase()
@@ -283,15 +285,11 @@ def render_ai_analysis_interface():
         
         st.write("### 📥 导出报告")
         
-        # 使用增强版报告生成器
-        from enhanced_report_generator import (
-            generate_enhanced_reports,
-            generate_enhanced_word_report,
-            generate_enhanced_excel_report
-        )
+        # 使用最终版报告生成器
+        from report_generator_final import generate_reports
         
-        # 生成增强版报告（直接从Agent结果中提取完整数据）
-        md_report, word_report, excel_report = generate_enhanced_reports(
+        # 生成报告
+        md_report, word_report, excel_report = generate_reports(
             agent_result, 
             sheet_name=selected_sheet
         )
@@ -322,6 +320,18 @@ def render_ai_analysis_interface():
             else:
                 st.button("📊 下载 Excel 报告", disabled=True)
         
+        # 显示分析过程步骤（可展开查看）
+        with st.expander("🔍 查看详细分析过程", expanded=False):
+            if hasattr(agent_result, 'steps') and agent_result.steps:
+                for i, step in enumerate(agent_result.steps, 1):
+                    action_name = step.action if hasattr(step, 'action') and step.action else '分析'
+                    st.write(f"**步骤 {i}**: {action_name}")
+                    if hasattr(step, 'thought') and step.thought:
+                        st.info(step.thought)
+                    if hasattr(step, 'observation') and step.observation:
+                        st.text(step.observation[:500] if len(step.observation) > 500 else step.observation)
+                    st.markdown("---")
+        
         if st.button("🔄 重新分析", type="secondary"):
             del st.session_state.agent_result
             del st.session_state.selected_sheet
@@ -331,6 +341,8 @@ def render_ai_analysis_interface():
         
         st.markdown("---")
         st.info("💡 如需重新分析，请点击上方「重新分析」按钮")
+        
+        # 不再return，让函数继续执行到结束
         return
     
     # 合并多表数据用于分析
@@ -486,16 +498,64 @@ def render_ai_analysis_interface():
                     # 生成可下载的报告文档
                     st.write("### 📥 导出报告")
                     
-                    # 使用报告生成器生成报告
-                    from report_generator import generate_markdown_report, generate_word_report
-                    
-                    # 生成报告
-                    md_report = generate_markdown_report(agent_result, dfs, selected_sheet)
-                    word_report = generate_word_report(agent_result, dfs, selected_sheet)
+                    # 使用层级化报告生成器
+                    try:
+                        from hierarchical_report_generator import generate_hierarchical_report
+                        
+                        # 获取清洗后的数据
+                        cleaned_df = None
+                        if st.session_state.cleaned_data is not None:
+                            if isinstance(st.session_state.cleaned_data, dict):
+                                # 多表情况，使用当前选中的表
+                                if selected_sheet in st.session_state.cleaned_data:
+                                    cleaned_df = st.session_state.cleaned_data[selected_sheet]
+                                else:
+                                    cleaned_df = list(st.session_state.cleaned_data.values())[0]
+                            else:
+                                cleaned_df = st.session_state.cleaned_data
+                        
+                        if cleaned_df is not None and not cleaned_df.empty:
+                            # 使用层级化报告生成器
+                            report_result = generate_hierarchical_report(
+                                df=cleaned_df,
+                                title=f'{selected_sheet}数据分析报告',
+                                sheet_name=selected_sheet
+                            )
+                            
+                            md_report = report_result['markdown']
+                            word_report = report_result['word']
+                            excel_report = report_result['excel']
+                            
+                            # 显示层级结构
+                            st.info("✅ 使用层级化报告生成器生成报告")
+                            
+                            # 显示各层级统计
+                            cols = st.columns(3)
+                            with cols[0]:
+                                st.metric("宏观层洞察", report_result['structure']['macro']['insights'])
+                            with cols[1]:
+                                st.metric("中观层洞察", report_result['structure']['meso']['insights'])
+                            with cols[2]:
+                                st.metric("微观层洞察", report_result['structure']['micro']['insights'])
+                            
+                            st.info(f"📊 共 {len(report_result['insights'])} 个洞察，{len(report_result['tables'])} 个数据表格")
+                        else:
+                            raise ValueError("清洗后的数据为空")
+                            
+                    except Exception as e:
+                        st.warning(f"层级化报告生成器调用失败，回退到旧版生成器: {str(e)}")
+                        
+                        # 回退到旧版报告生成器
+                        from report_generator_final import generate_reports
+                        md_report, word_report, excel_report = generate_reports(
+                            agent_result, 
+                            sheet_name=selected_sheet
+                        )
                     
                     # 保存报告到session_state，确保下载按钮在页面重新运行后仍然显示
                     st.session_state.agent_md_report = md_report
                     st.session_state.agent_word_report = word_report.getvalue()
+                    st.session_state.agent_excel_report = excel_report
                     st.session_state.agent_report_filename = f"analysis_report_{selected_sheet}"
                     
                     # 保存结果
@@ -510,23 +570,7 @@ def render_ai_analysis_interface():
                 if 'agent_md_report' in st.session_state:
                     st.subheader("📥 下载报告")
                     
-                    # 生成Excel报告
-                    if 'agent_excel_report' not in st.session_state and 'agent_dfs' in st.session_state and 'selected_sheet' in st.session_state:
-                        try:
-                            from business_report_excel import generate_excel_report
-                            selected_sheet = st.session_state.selected_sheet
-                            if selected_sheet in st.session_state.agent_dfs:
-                                df_for_excel = st.session_state.agent_dfs[selected_sheet]
-                                excel_report_data = generate_excel_report(
-                                    df_for_excel, 
-                                    title=f"业务分析报告 - {selected_sheet}"
-                                )
-                                if excel_report_data:
-                                    st.session_state.agent_excel_report = excel_report_data
-                                else:
-                                    st.warning("⚠️ Excel报告生成失败，请检查数据")
-                        except Exception as e:
-                            st.warning(f"⚠️ Excel报告生成失败: {str(e)}")
+                    # Excel报告已由 generate_reports 函数生成并保存到 session_state
                     
                     col1, col2, col3 = st.columns(3)
                     with col1:
@@ -556,6 +600,20 @@ def render_ai_analysis_interface():
                             )
                         else:
                             st.button("📊 下载 Excel 报告", disabled=True, key="agent_download_excel_disabled")
+                    
+                    # 显示分析过程步骤（可展开查看）
+                    with st.expander("🔍 查看详细分析过程", expanded=False):
+                        if 'agent_result' in st.session_state:
+                            agent_result = st.session_state.agent_result
+                            if hasattr(agent_result, 'steps') and agent_result.steps:
+                                for i, step in enumerate(agent_result.steps, 1):
+                                    action_name = step.action if hasattr(step, 'action') and step.action else '分析'
+                                    st.write(f"**步骤 {i}**: {action_name}")
+                                    if hasattr(step, 'thought') and step.thought:
+                                        st.info(step.thought)
+                                    if hasattr(step, 'observation') and step.observation:
+                                        st.text(step.observation[:500] if len(step.observation) > 500 else step.observation)
+                                    st.markdown("---")
                 
                 else:
                     # 传统分析模式

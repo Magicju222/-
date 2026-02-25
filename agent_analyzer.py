@@ -66,7 +66,9 @@ class SecureCodeExecutor:
     ALLOWED_IMPORTS: Set[str] = {
         'pandas', 'pd', 'numpy', 'np', 'math', 'statistics', 
         'datetime', 'json', 're', 'collections', 'itertools',
-        'matplotlib', 'matplotlib.pyplot', 'plt', 'seaborn', 'sns'
+        'matplotlib', 'matplotlib.pyplot', 'plt', 'seaborn', 'sns',
+        'scipy', 'scipy.stats', 'scipy.optimize', 'scipy.linalg',
+        'warnings', 'typing', 'types', 'functools', 'decimal'
     }
     
     def __init__(self, dfs: Dict[str, pd.DataFrame]):
@@ -86,7 +88,8 @@ class SecureCodeExecutor:
             'len', 'range', 'enumerate', 'zip', 'map', 'filter',
             'sum', 'min', 'max', 'abs', 'round', 'sorted',
             'str', 'int', 'float', 'bool', 'list', 'dict', 'tuple', 'set',
-            'type', 'isinstance', 'hasattr', 'print', '__import__'
+            'type', 'isinstance', 'hasattr', 'print', '__import__',
+            'any', 'all', 'next', 'iter', 'reversed'
         }
         
         for name in allowed_builtins:
@@ -125,7 +128,48 @@ class SecureCodeExecutor:
         except ImportError:
             pass
         
+        # 添加列名查找辅助函数
+        safe_namespace['find_column'] = self._find_column
+        safe_namespace['get_columns'] = self._get_columns
+        
         return safe_namespace
+    
+    def _find_column(self, df: pd.DataFrame, partial_name: str) -> str:
+        """
+        根据部分列名查找完整列名
+        
+        Args:
+            df: DataFrame
+            partial_name: 部分列名（如 '车均收入'）
+            
+        Returns:
+            匹配的完整列名，如果没有找到则返回原始输入
+        """
+        if partial_name in df.columns:
+            return partial_name
+        
+        # 尝试部分匹配
+        matches = [col for col in df.columns if partial_name in col]
+        if len(matches) == 1:
+            return matches[0]
+        elif len(matches) > 1:
+            # 如果有多个匹配，返回最精确的那个（长度最短的）
+            return min(matches, key=len)
+        
+        # 如果没有找到，返回原始输入（让调用者处理错误）
+        return partial_name
+    
+    def _get_columns(self, df: pd.DataFrame) -> list:
+        """
+        获取DataFrame的所有列名
+        
+        Args:
+            df: DataFrame
+            
+        Returns:
+            列名列表
+        """
+        return list(df.columns)
     
     def validate_code(self, code: str) -> tuple[bool, str]:
         """
@@ -324,12 +368,9 @@ class DataAnalysisTools:
         try:
             import matplotlib.pyplot as plt
             
-            self.execution_namespace['plt'] = plt
-            
             # 尝试导入 seaborn，如果失败则使用 matplotlib 替代
             try:
                 import seaborn as sns
-                self.execution_namespace['sns'] = sns
                 has_seaborn = True
             except ImportError:
                 has_seaborn = False
@@ -607,6 +648,25 @@ class AgentAnalyzer:
 在 execute_python 中使用：
 - `dfs` 字典访问多表数据，如 `dfs['表名1']`, `dfs['表名2']`
 - `df` 访问第一张表的数据
+- `get_columns(df)` 获取所有列名
+- `find_column(df, '部分列名')` 根据部分列名查找完整列名（重要！）
+
+### 列名查找辅助函数（重要！）
+
+由于列名可能很长（如 `'运营总收入 / 实际 / 车均收入 / 元'`），使用以下辅助函数：
+
+```python
+# ✅ 正确：使用 find_column 查找完整列名
+col = find_column(df, '车均收入')  # 返回 '运营总收入 / 实际 / 车均收入 / 元'
+result = df[col].sum()
+
+# ✅ 正确：先获取所有列名，再查找
+columns = get_columns(df)
+# 然后使用字符串匹配找到正确的列名
+
+# ❌ 错误：直接使用部分列名（会导致 KeyError）
+result = df['车均收入'].sum()  # 会报错：'车均收入' not in index
+```
 
 ## 数据完整性要求（强制执行）
 
@@ -709,6 +769,42 @@ except ImportError:
     pass
 ```
 
+### 6. 处理数值计算警告
+```python
+# ✅ 正确：计算前过滤无效值，避免 RuntimeWarning
+import numpy as np
+import warnings
+
+# 方法1：使用 dropna() 过滤空值
+valid_data = df['数值列'].dropna()
+result = valid_data.mean()
+
+# 方法2：使用 fillna() 填充空值
+result = df['数值列'].fillna(0).mean()
+
+# 方法3：使用 np.nanmean() 自动忽略 NaN
+result = np.nanmean(df['数值列'])
+
+# 方法4：使用 where 过滤无效值
+valid_data = df['数值列'].where(df['数值列'].notna() & np.isfinite(df['数值列']))
+result = valid_data.mean()
+```
+
+### 7. 处理标准差计算中的警告
+```python
+# ✅ 正确：计算标准差前检查数据有效性
+import numpy as np
+
+data = df['数值列'].dropna()
+if len(data) > 1 and data.std() != 0:
+    std_val = data.std()
+else:
+    std_val = 0  # 或 np.nan
+
+# 或使用 numpy 的 nanstd
+std_val = np.nanstd(df['数值列'])
+```
+
 ## 重要提醒
 
 ❌ **严禁（会导致数据不完整）**：
@@ -787,6 +883,30 @@ except ImportError:
 - `execute_python`: 执行深度分析，关注数据分布、相关性、异常值等业务指标
 - `generate_visualization`: 创建能说明业务问题的图表
 - `statistical_analysis`: 进行统计分析，但**重点解释统计结果的业务意义**
+
+## 数据访问方式
+
+在 execute_python 中使用：
+- `df` 访问数据
+- `get_columns(df)` 获取所有列名
+- `find_column(df, '部分列名')` 根据部分列名查找完整列名（重要！）
+
+### 列名查找辅助函数（重要！）
+
+由于列名可能很长（如 `'运营总收入 / 实际 / 车均收入 / 元'`），使用以下辅助函数：
+
+```python
+# ✅ 正确：使用 find_column 查找完整列名
+col = find_column(df, '车均收入')  # 返回 '运营总收入 / 实际 / 车均收入 / 元'
+result = df[col].sum()
+
+# ✅ 正确：先获取所有列名，再查找
+columns = get_columns(df)
+# 然后使用字符串匹配找到正确的列名
+
+# ❌ 错误：直接使用部分列名（会导致 KeyError）
+result = df['车均收入'].sum()  # 会报错：'车均收入' not in index
+```
 
 ## 数据完整性要求
 
